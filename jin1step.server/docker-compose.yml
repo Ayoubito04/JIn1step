@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: jin1step_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jin1step_user
+      POSTGRES_PASSWORD: jin1step_pass
+      POSTGRES_DB: jin1step_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - jin1step_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jin1step_user -d jin1step_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    container_name: jin1step_backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  jin1step_db_data:

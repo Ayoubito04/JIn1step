@@ -1,0 +1,302 @@
+// Esquema Prisma — JIn1Step
+// 12 tablas: usuarios, candidatos_perfil, empresas, cvs, habilidades,
+// cv_habilidades, ofertas, oferta_requisitos, postulaciones,
+// conversaciones, mensajes, suscripciones
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── ENUMS ────────────────────────────────────────────────
+
+enum Rol {
+  ADMIN
+  RECLUTADOR
+  CANDIDATO
+}
+
+enum Modalidad {
+  REMOTO
+  HIBRIDO
+  PRESENCIAL
+}
+
+enum EstadoOferta {
+  ABIERTA
+  CERRADA
+}
+
+enum EstadoPostulacion {
+  PENDIENTE
+  ENVIADA
+  VISTA
+  RECHAZADA
+  ENTREVISTA
+}
+
+// Nivel declarado de una habilidad dentro de un CV. Era un String libre con un
+// comentario que "sugeria" tres valores en minusculas y con tilde, mientras
+// habilidad.schema.ts imponia estos tres en mayusculas: la unica garantia vivia
+// en Zod, asi que cualquier escritura que no pasara por ese endpoint podia
+// meter "8/10" o "intermedio-alto" y romper los filtros. Ahora lo garantiza la
+// base de datos, como con el resto de campos cerrados del modelo.
+enum NivelHabilidad {
+  BASICO
+  INTERMEDIO
+  AVANZADO
+}
+
+enum EstadoSuscripcion {
+  ACTIVA
+  CANCELADA
+  VENCIDA
+  PENDIENTE_PAGO
+}
+
+enum ProveedorPago {
+  STRIPE
+  GOOGLE_PLAY
+  APP_STORE
+}
+
+// Planes de la suscripcion del autopiloto. El precio de cada uno lo fija el
+// servidor (ver PRECIOS_CENTIMOS en suscripcion.service.ts): el cliente elige
+// el plan, nunca lo que cuesta.
+enum TipoPlan {
+  MENSUAL
+  ANUAL
+}
+
+// ── MODELOS ──────────────────────────────────────────────
+
+model Usuario {
+  id           String   @id @default(uuid())
+  nombre       String
+  apellidos    String
+  email        String   @unique
+  passwordHash String?  @map("password_hash") // null si el usuario entra solo con Google
+  googleId     String?  @unique @map("google_id")
+  rol          Rol
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  candidatoPerfil CandidatoPerfil?
+  cvs             Cv[]
+  ofertasCreadas  Oferta[]         @relation("ReclutadorOfertas")
+
+  conversacionesComoCandidato  Conversacion[]         @relation("CandidatoConversaciones")
+  conversacionesComoReclutador Conversacion[]         @relation("ReclutadorConversaciones")
+  mensajesEnviados             Mensaje[]
+  suscripciones                Suscripcion[]
+  preferenciasAutopilot        PreferenciasAutopilot?
+
+  @@map("usuarios")
+}
+
+model CandidatoPerfil {
+  usuarioId      String  @id @map("usuario_id")
+  ubicacion      String?
+  disponibilidad String?
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@map("candidatos_perfil")
+}
+
+model Empresa {
+  id        String  @id @default(uuid())
+  nombre    String
+  sector    String?
+  ubicacion String?
+  sitioWeb  String? @map("sitio_web")
+
+  ofertas Oferta[]
+
+  @@map("empresas")
+}
+
+model Cv {
+  id             String   @id @default(uuid())
+  usuarioId      String   @map("usuario_id")
+  titulo         String
+  urlArchivo     String   @map("url_archivo") // ruta en Supabase Storage / S3, NUNCA el binario
+  contenidoTexto String?  @map("contenido_texto") // texto ya extraído del PDF/DOCX
+  atsScore       Int?     @map("ats_score")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  usuario               Usuario                 @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  habilidades           CvHabilidad[]
+  postulaciones         Postulacion[]
+  preferenciasAutopilot PreferenciasAutopilot[]
+
+  @@map("cvs")
+}
+
+model Habilidad {
+  id     String @id @default(uuid())
+  nombre String @unique
+
+  cvs     CvHabilidad[]
+  ofertas OfertaRequisito[]
+
+  @@map("habilidades")
+}
+
+// Tabla puente N:M — habilidades que tiene cada CV
+model CvHabilidad {
+  cvId        String  @map("cv_id")
+  habilidadId String  @map("habilidad_id")
+  nivel       NivelHabilidad? // opcional: se puede declarar la habilidad sin nivel
+
+  cv        Cv        @relation(fields: [cvId], references: [id], onDelete: Cascade)
+  habilidad Habilidad @relation(fields: [habilidadId], references: [id], onDelete: Cascade)
+
+  @@id([cvId, habilidadId])
+  @@map("cv_habilidades")
+}
+
+model Oferta {
+  id               String       @id @default(uuid())
+  empresaId        String       @map("empresa_id")
+  reclutadorId     String       @map("reclutador_id")
+  titulo           String
+  descripcion      String
+  modalidad        Modalidad
+  estado           EstadoOferta @default(ABIERTA)
+  fechaPublicacion DateTime     @default(now()) @map("fecha_publicacion")
+
+  empresa        Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  reclutador     Usuario           @relation("ReclutadorOfertas", fields: [reclutadorId], references: [id], onDelete: Cascade)
+  requisitos     OfertaRequisito[]
+  postulaciones  Postulacion[]
+  conversaciones Conversacion[]
+
+  @@map("ofertas")
+}
+
+// Tabla puente N:M — habilidades que pide cada oferta
+model OfertaRequisito {
+  ofertaId    String  @map("oferta_id")
+  habilidadId String  @map("habilidad_id")
+  obligatorio Boolean @default(true)
+
+  oferta    Oferta    @relation(fields: [ofertaId], references: [id], onDelete: Cascade)
+  habilidad Habilidad @relation(fields: [habilidadId], references: [id], onDelete: Cascade)
+
+  @@id([ofertaId, habilidadId])
+  @@map("oferta_requisitos")
+}
+
+// Registro de eventos — cada fila es un CV evaluado/aplicado contra una oferta
+model Postulacion {
+  id               String            @id @default(uuid())
+  cvId             String            @map("cv_id")
+  ofertaId         String            @map("oferta_id")
+  matchScore       Float             @map("match_score")
+  postuladoPorIa   Boolean           @default(false) @map("postulado_por_ia")
+  estado           EstadoPostulacion @default(PENDIENTE)
+  fechaPostulacion DateTime          @default(now()) @map("fecha_postulacion")
+
+  cv     Cv     @relation(fields: [cvId], references: [id], onDelete: Cascade)
+  oferta Oferta @relation(fields: [ofertaId], references: [id], onDelete: Cascade)
+
+  // Un mismo CV no puede postularse dos veces a la misma oferta. Es la red de
+  // seguridad contra el autopiloto: si el cron se reejecuta o dos pasadas se
+  // solapan, la base de datos rechaza el duplicado aunque el código falle.
+  // Ojo: esto NO impide que el candidato se postule a la misma oferta con OTRO
+  // CV — una restricción de BD no puede llegar hasta cv.usuarioId. Esa regla se
+  // comprueba en postulacion.service.ts.
+  @@unique([cvId, ofertaId])
+  @@map("postulaciones")
+}
+
+// Chat gratuito candidato ↔ reclutador (opcionalmente ligado a una oferta concreta)
+model Conversacion {
+  id           String   @id @default(uuid())
+  candidatoId  String   @map("candidato_id")
+  reclutadorId String   @map("reclutador_id")
+  ofertaId     String?  @map("oferta_id") // contexto opcional: sobre qué oferta hablan
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  candidato  Usuario   @relation("CandidatoConversaciones", fields: [candidatoId], references: [id], onDelete: Cascade)
+  reclutador Usuario   @relation("ReclutadorConversaciones", fields: [reclutadorId], references: [id], onDelete: Cascade)
+  oferta     Oferta?   @relation(fields: [ofertaId], references: [id], onDelete: SetNull)
+  mensajes   Mensaje[]
+
+  @@unique([candidatoId, reclutadorId, ofertaId])
+  @@map("conversaciones")
+}
+
+model Mensaje {
+  id             String   @id @default(uuid())
+  conversacionId String   @map("conversacion_id")
+  emisorId       String   @map("emisor_id")
+  contenido      String
+  leido          Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversacion Conversacion @relation(fields: [conversacionId], references: [id], onDelete: Cascade)
+  emisor       Usuario      @relation(fields: [emisorId], references: [id], onDelete: Cascade)
+
+  @@map("mensajes")
+}
+
+// Suscripción de pago para la automatización de postulaciones por IA.
+// Un usuario puede tener varias filas a lo largo del tiempo (histórico);
+// la restricción de "solo una ACTIVA a la vez" se aplica con un índice único parcial.
+model Suscripcion {
+  id               String            @id @default(uuid())
+  usuarioId        String            @map("usuario_id")
+  estado           EstadoSuscripcion @default(PENDIENTE_PAGO)
+  proveedorPago    ProveedorPago     @map("proveedor_pago")
+  tipoPlan         TipoPlan          @default(MENSUAL) @map("tipo_plan")
+  // Opcional a propósito: la fila nace en PENDIENTE_PAGO, o sea ANTES de que
+  // Stripe devuelva el subscription id; lo rellena el webhook al confirmar el
+  // cobro. Siendo String obligatorio era imposible insertar una fila en el
+  // estado que el propio @default de estado declara como inicial.
+  //
+  // @unique ataja los webhooks duplicados en su origen: el mismo evento
+  // reintentado por Stripe no puede crear una segunda fila. En Postgres un
+  // índice único admite varios NULL, así que las altas todavía sin pagar no se
+  // estorban entre sí.
+  idExterno        String?           @unique @map("id_externo") // subscription id de Stripe / purchase token de Play
+  // Sin @default a propósito: el precio lo fija el servidor según tipoPlan (ver
+  // PRECIOS_CENTIMOS en suscripcion.service.ts). El 500 que había aquí es
+  // anterior a TipoPlan, y escribía 5,00 € en un alta ANUAL si el service se
+  // dejaba el campo: un año entero cobrado al precio de un mes.
+  precioCentimos   Int               @map("precio_centimos") // en céntimos, nunca en euros
+  fechaInicio      DateTime          @default(now()) @map("fecha_inicio")
+  fechaRenovacion  DateTime?         @map("fecha_renovacion")
+  fechaCancelacion DateTime?         @map("fecha_cancelacion")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@map("suscripciones")
+}
+
+// Configuración del autopiloto: qué quiere el usuario que la IA haga por él.
+// Va en su propia tabla y no en Suscripcion porque un usuario acumula varias
+// filas de Suscripcion con el tiempo; si las preferencias vivieran ahí, al
+// renovar se crearía una fila nueva y el usuario perdería sus ajustes.
+model PreferenciasAutopilot {
+  // @id en usuarioId fuerza una sola fila por usuario: no puede tener dos
+  // configuraciones contradictorias, y permite findUnique({ where: { usuarioId } }).
+  usuarioId   String    @id @map("usuario_id")
+  activo      Boolean   @default(false) // nadie entra en el autopiloto por defecto
+  cvId        String?   @map("cv_id") // con qué CV postula
+  scoreMinimo Float     @default(70) @map("score_minimo") // no postular por debajo
+  maxPorDia   Int       @default(5) @map("max_por_dia") // evita quemar su reputación
+  activadoEn  DateTime? @map("activado_en") // registro de consentimiento
+  revocadoEn  DateTime? @map("revocado_en")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  // SetNull y no Cascade: si el usuario borra ese CV, se queda sin CV asignado
+  // pero conserva su configuración. Con Cascade perdería los ajustes sin enterarse.
+  cv      Cv?     @relation(fields: [cvId], references: [id], onDelete: SetNull)
+
+  @@map("preferencias_autopilot")
+}
