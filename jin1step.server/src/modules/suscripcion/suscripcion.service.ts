@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma'
 import { HttpError } from '../../lib/http-error'
+import { env } from '../../config/env'
+import { stripe, precioDeStripe } from '../../lib/stripe'
 import type {
     CancelarSuscripcionInput,
     IniciarSuscripcionInput,
@@ -198,5 +200,58 @@ export const ActivarPorWebhook = async (
             throw new HttpError(409, 'Este pago ya estaba registrado')
         }
         throw err
+    }
+}
+
+// Crea la sesión de pago en Stripe y devuelve la URL a la que mandar al
+// usuario. Se apoya en CrearSuscripcion, que ya deja la fila en
+// PENDIENTE_PAGO: el checkout NO da acceso, lo da el webhook al confirmar.
+//
+// El id de nuestra fila viaja en metadata. Es el hilo que permite al webhook
+// saber qué suscripción activar cuando Stripe avise del pago; sin él, el
+// evento llegaría sin forma de relacionarlo con nuestra base de datos.
+export const IniciarCheckout = async (
+    idUsuario: string,
+    datos: IniciarSuscripcionInput,
+) => {
+    const suscripcion = await CrearSuscripcion(idUsuario, datos)
+
+    const usuario = await prisma.usuario.findUniqueOrThrow({
+        where: { id: idUsuario },
+        select: { email: true },
+    })
+
+    const sesion = await stripe().checkout.sessions.create(
+        {
+            mode: 'subscription',
+            line_items: [{ price: precioDeStripe(datos.tipoPlan), quantity: 1 }],
+
+            // Prerrellenar el email evita que el usuario lo teclee mal y que
+            // acabemos con un cliente en Stripe imposible de cruzar con el
+            // nuestro.
+            customer_email: usuario.email,
+
+            metadata: { suscripcionId: suscripcion.id },
+            // También en la suscripción, no solo en la sesión: los eventos de
+            // renovación e impago llegan con el objeto Subscription, que no
+            // ve la metadata de la sesión de checkout.
+            subscription_data: { metadata: { suscripcionId: suscripcion.id } },
+
+            success_url: `${env.appUrl}/suscripcion/ok?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${env.appUrl}/suscripcion/cancelado`,
+        },
+        // Idempotency-Key de Stripe: si el usuario pulsa "Pagar" dos veces,
+        // la segunda petición devuelve la MISMA sesión en vez de crear otra
+        // y cobrarle dos veces.
+        datos.claveIdempotencia
+            ? { idempotencyKey: datos.claveIdempotencia }
+            : undefined,
+    )
+
+    return {
+        suscripcion,
+        // La URL a la que el frontend tiene que redirigir. Nunca se construye
+        // a mano: la firma Stripe y caduca.
+        urlPago: sesion.url,
     }
 }

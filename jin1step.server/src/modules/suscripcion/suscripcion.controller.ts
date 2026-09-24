@@ -24,11 +24,13 @@ export async function crear(
 ): Promise<void> {
     try {
         const usuario = usuarioAutenticado(req)
-        const suscripcion = await suscripcionService.CrearSuscripcion(
+        //IniciarCheckout crea la fila en PENDIENTE_PAGO Y la sesion de pago.
+        //Devuelve urlPago: es a donde el frontend tiene que redirigir.
+        const resultado = await suscripcionService.IniciarCheckout(
             usuario.id,
             req.body as IniciarSuscripcionInput,
         )
-        res.status(201).json(suscripcion)
+        res.status(201).json(resultado)
     } catch (err) {
         next(err)
     }

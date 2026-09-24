@@ -9,8 +9,10 @@ import { preferenciasAutopilotRouter } from '../modules/preferencias_autopilot/p
 import { postulacionesAutopilotRouter } from '../modules/postulaciones_autopilot/postulaciones_autopilot.routes'
 import { habilidadRouter } from '../modules/habilidad/habilidad.routes'
 import { empresaRouter } from '../modules/empresa/empresa.routes'
+import { candidatoPerfilRouter } from '../modules/CandidatoPerfil/CandidatoPerfil.route'
 import { conversacionRouter } from '../modules/conversacion/conversacion.route'
 import { mensajeRouter } from '../modules/mensaje/mensaje.routes'
+import { suscripcionRouter } from '../modules/suscripcion/suscripcion.routes'
 
 export const router = Router()
 
@@ -28,6 +30,8 @@ router.use('/preferencias-autopilot', preferenciasAutopilotRouter)
 router.use('/postulaciones-autopilot', postulacionesAutopilotRouter)
 router.use('/habilidades', habilidadRouter)
 router.use('/empresas', empresaRouter)
+router.use('/perfil-candidato', candidatoPerfilRouter)
+router.use('/suscripciones', suscripcionRouter)
 
 //Los mensajes cuelgan de /conversaciones/:conversacionId/mensajes, montados
 //dentro del conversacionRouter. Bajo /mensajes solo queda el contador global
