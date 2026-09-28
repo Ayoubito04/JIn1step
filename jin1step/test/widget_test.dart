@@ -49,12 +49,22 @@ class AuthFalso extends AuthService {
   }
 }
 
+/// Placeholder de /home para los tests: en vez de montar la pantalla real
+/// (con sus propias llamadas de red), solo enseña el nombre que llegó por
+/// argumento. Así se puede comprobar que login/registro navegan de verdad y
+/// pasan los datos correctos, sin arrastrar toda la Home a estos tests.
+Widget _homeDePrueba(BuildContext context) {
+  final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+  return Scaffold(body: Text('PANTALLA HOME: ${args['nombre']}'));
+}
+
 Future<void> abrirLogin(WidgetTester tester, AuthService auth) async {
   await tester.pumpWidget(
     MaterialApp(
       routes: {
         '/': (_) => LoginScreen(auth: auth),
         '/register': (_) => const RegisterPage(),
+        '/home': _homeDePrueba,
       },
     ),
   );
@@ -65,13 +75,6 @@ Future<void> abrirLogin(WidgetTester tester, AuthService auth) async {
 Finder get campoEmail => find.byType(TextFormField).at(0);
 Finder get campoPassword => find.byType(TextFormField).at(1);
 Finder get botonEntrar => find.text('Iniciar sesión');
-
-/// La SnackBar deja un temporizador vivo; si no se agota, el test falla al
-/// terminar con "A Timer is still pending".
-Future<void> cerrarSnackBar(WidgetTester tester) async {
-  await tester.pump(const Duration(seconds: 5));
-  await tester.pumpAndSettle();
-}
 
 void main() {
   testWidgets('pinta la pantalla completa tras la animación de entrada',
@@ -152,15 +155,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    final boton = tester.widget<ElevatedButton>(find.byType(ElevatedButton));
+    final boton = tester.widget<FilledButton>(find.byType(FilledButton));
     expect(boton.onPressed, isNull, reason: 'evita un doble envío');
 
     espera.complete({'nombre': 'Ana'});
     await tester.pumpAndSettle();
-    await cerrarSnackBar(tester);
+
+    // Terminada la espera, ya no hay spinner: se ha navegado a home.
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.textContaining('PANTALLA HOME'), findsOneWidget);
   });
 
-  testWidgets('login correcto: recorta espacios y saluda', (tester) async {
+  testWidgets('login correcto: recorta espacios y navega al home', (tester) async {
     final auth = AuthFalso();
     await abrirLogin(tester, auth);
 
@@ -170,8 +176,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(auth.ultimoEmail, 'ana@test.io');
-    expect(find.text('¡Hola, Ana!'), findsOneWidget);
-    await cerrarSnackBar(tester);
+    expect(find.text('PANTALLA HOME: Ana'), findsOneWidget);
   });
 
   testWidgets('el enlace de registro navega sin romper', (tester) async {
@@ -200,6 +205,7 @@ Future<void> abrirRegistro(WidgetTester tester, AuthService auth) async {
       routes: {
         '/': (_) => const Scaffold(body: Text('PANTALLA LOGIN')),
         '/register': (_) => RegisterPage(auth: auth),
+        '/home': _homeDePrueba,
       },
       initialRoute: '/register',
     ),
@@ -274,8 +280,7 @@ void testsDeRegistro() {
     expect(auth.ultimoRol, Rol.candidato);
     expect(auth.ultimoRol!.valorApi, 'CANDIDATO');
     expect(auth.ultimoNombre, 'Ana');
-    expect(find.textContaining('Cuenta creada'), findsOneWidget);
-    await cerrarSnackBar(tester);
+    expect(find.text('PANTALLA HOME: Ana'), findsOneWidget);
   });
 
   testWidgets('registro: el selector cambia el rol a RECLUTADOR',
@@ -291,7 +296,7 @@ void testsDeRegistro() {
 
     expect(auth.ultimoRol, Rol.reclutador);
     expect(auth.ultimoRol!.valorApi, 'RECLUTADOR');
-    await cerrarSnackBar(tester);
+    expect(find.textContaining('PANTALLA HOME'), findsOneWidget);
   });
 
   testWidgets('registro: enseña el error del backend', (tester) async {

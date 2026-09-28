@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../services/auth.service.dart';
+// home.dart NO se importa: se navega con pushNamedAndRemoveUntil('/home', ...),
+// la ruta con nombre que ya registra main.dart, sin referenciar la clase Home.
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key, this.auth});
@@ -87,12 +89,7 @@ class _RegisterPageState extends State<RegisterPage>
 
       // register() ya guarda los tokens: el usuario queda con la sesión
       // iniciada, sin tener que pasar por el login.
-      // TODO: navegar a la pantalla principal cuando exista.
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('¡Cuenta creada! Bienvenido, ${usuario['nombre']}'),
-        ),
-      );
+      _entrarHome(usuario);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = e.mensaje);
@@ -100,6 +97,17 @@ class _RegisterPageState extends State<RegisterPage>
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
+  }
+
+  /// Lleva al home pasándole los datos del usuario recién creado. Mismo
+  /// patrón que en login.dart: pushNamedAndRemoveUntil borra el registro del
+  /// historial para que "atrás" no vuelva a un formulario ya enviado.
+  void _entrarHome(Map<String, dynamic> usuario) {
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/home',
+      (route) => false,
+      arguments: usuario,
+    );
   }
 
   /// Entrada escalonada: mismo efecto que en el login.
@@ -127,74 +135,57 @@ class _RegisterPageState extends State<RegisterPage>
 
   @override
   Widget build(BuildContext context) {
+    final esquema = Theme.of(context).colorScheme;
+
+    // Sin degradado ni AppBar transparente: fondo plano (scaffoldBackground
+    // del tema) y una AppBar normal, solo para dar la flecha de "volver".
     return Scaffold(
-      // AppBar transparente: da la flecha de volver al login sin tapar el
-      // degradado. extendBodyBehindAppBar hace que el fondo llegue arriba.
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: Colors.white,
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF4F46E5), Color(0xFF7C3AED), Color(0xFFDB2777)],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Column(
-                  children: [
-                    _aparecer(
-                      inicio: 0.0,
-                      child: const Text(
-                        'Crea tu cuenta',
-                        style: TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _aparecer(
-                      inicio: 0.05,
-                      child: const Text(
-                        'Empieza a encontrar tu próximo empleo',
-                        style: TextStyle(fontSize: 15, color: Colors.white70),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    _construirTarjeta(),
-                    const SizedBox(height: 12),
-                    _aparecer(
-                      inicio: 0.55,
-                      child: TextButton(
-                        // pop y no pushNamed('/login'): se llegó aquí desde el
-                        // login, así que basta con volver atrás. Con push se
-                        // apilarían pantallas de login infinitas.
-                        onPressed: _cargando
-                            ? null
-                            : () => Navigator.pop(context),
-                        child: const Text(
-                          '¿Ya tienes cuenta? Inicia sesión',
-                          style: TextStyle(
-                            color: Colors.white,
-                            decoration: TextDecoration.underline,
-                            decorationColor: Colors.white,
+      appBar: AppBar(),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                children: [
+                  _aparecer(
+                    inicio: 0.0,
+                    child: Text(
+                      'Crea tu cuenta',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: esquema.onSurface,
                           ),
-                        ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _aparecer(
+                    inicio: 0.05,
+                    child: Text(
+                      'Empieza a encontrar tu próximo empleo',
+                      style: TextStyle(fontSize: 15, color: esquema.onSurfaceVariant),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _construirTarjeta(),
+                  const SizedBox(height: 12),
+                  _aparecer(
+                    inicio: 0.55,
+                    child: TextButton(
+                      // pop y no pushNamed('/login'): se llegó aquí desde el
+                      // login, así que basta con volver atrás. Con push se
+                      // apilarían pantallas de login infinitas.
+                      onPressed: _cargando
+                          ? null
+                          : () => Navigator.pop(context),
+                      child: const Text(
+                        '¿Ya tienes cuenta? Inicia sesión',
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -214,13 +205,11 @@ class _RegisterPageState extends State<RegisterPage>
           child: child,
         );
       },
+      // Card sin decoración extra: elevation, color y bordes redondeados ya
+      // salen de cardTheme (core/app_theme.dart).
       child: _aparecer(
         inicio: 0.15,
         child: Card(
-          elevation: 12,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Form(
@@ -287,7 +276,7 @@ class _RegisterPageState extends State<RegisterPage>
             for (final rol in Rol.values)
               ButtonSegment<Rol>(
                 value: rol,
-                label: Text(rol == Rol.candidato ? 'Candidato' : 'Reclutador'),
+                label: Text(rol.etiqueta),
                 icon: Icon(
                   rol == Rol.candidato
                       ? Icons.person_search_outlined
@@ -322,7 +311,6 @@ class _RegisterPageState extends State<RegisterPage>
       decoration: InputDecoration(
         labelText: etiqueta,
         prefixIcon: icono == null ? null : Icon(icono),
-        border: const OutlineInputBorder(),
       ),
       validator: (valor) {
         final texto = valor?.trim() ?? '';
@@ -344,7 +332,6 @@ class _RegisterPageState extends State<RegisterPage>
       decoration: const InputDecoration(
         labelText: 'Email',
         prefixIcon: Icon(Icons.email_outlined),
-        border: OutlineInputBorder(),
       ),
       validator: (valor) {
         final email = valor?.trim() ?? '';
@@ -368,7 +355,6 @@ class _RegisterPageState extends State<RegisterPage>
         labelText: 'Contraseña',
         helperText: 'Entre 8 y 72 caracteres',
         prefixIcon: const Icon(Icons.lock_outline),
-        border: const OutlineInputBorder(),
         suffixIcon: IconButton(
           tooltip: _verPassword ? 'Ocultar contraseña' : 'Mostrar contraseña',
           icon: Icon(
@@ -401,7 +387,6 @@ class _RegisterPageState extends State<RegisterPage>
       decoration: const InputDecoration(
         labelText: 'Repite la contraseña',
         prefixIcon: Icon(Icons.lock_reset_outlined),
-        border: OutlineInputBorder(),
       ),
       validator: (valor) =>
           valor != _passwordCtrl.text ? 'Las contraseñas no coinciden' : null,
@@ -409,6 +394,8 @@ class _RegisterPageState extends State<RegisterPage>
   }
 
   Widget _construirError() {
+    final esquema = Theme.of(context).colorScheme;
+
     return AnimatedSize(
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
@@ -418,19 +405,20 @@ class _RegisterPageState extends State<RegisterPage>
               width: double.infinity,
               margin: const EdgeInsets.only(top: 16),
               padding: const EdgeInsets.all(12),
+              // errorContainer/onErrorContainer: el par de colores que
+              // Material 3 reserva para avisos de error.
               decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.red.shade200),
+                color: esquema.errorContainer,
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.error_outline, color: Colors.red.shade700),
+                  Icon(Icons.error_outline, color: esquema.onErrorContainer),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _error!,
-                      style: TextStyle(color: Colors.red.shade800),
+                      style: TextStyle(color: esquema.onErrorContainer),
                     ),
                   ),
                 ],
@@ -442,35 +430,26 @@ class _RegisterPageState extends State<RegisterPage>
   Widget _botonCrear() {
     return SizedBox(
       height: 52,
-      child: ElevatedButton(
+      // FilledButton: la acción principal en Material 3 (filledButtonTheme
+      // en core/app_theme.dart le da el redondeo y el tamaño).
+      child: FilledButton(
         onPressed: _cargando ? null : _registrarse,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF4F46E5),
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: const Color(
-            0xFF4F46E5,
-          ).withValues(alpha: 0.6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
           child: _cargando
-              ? const SizedBox(
-                  key: ValueKey('cargando'),
+              ? SizedBox(
+                  key: const ValueKey('cargando'),
                   width: 24,
                   height: 24,
+                  // Color explícito onPrimary: sin él, el spinner toma el
+                  // primary del tema y se vuelve invisible sobre el fondo
+                  // (también primary) del FilledButton.
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onPrimary,
                   ),
                 )
-              : const Text(
-                  'Crear cuenta',
-                  key: ValueKey('texto'),
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+              : const Text('Crear cuenta', key: ValueKey('texto')),
         ),
       ),
     );

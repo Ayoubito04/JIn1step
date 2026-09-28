@@ -9,13 +9,22 @@ import '../core/api_client.dart';
 /// 'CANDIDATO' o 'RECLUTADOR' en mayúsculas. Así no hay que convertirlo a mano
 /// en cada sitio, y el compilador impide pasar un rol que no existe.
 enum Rol {
-  candidato('CANDIDATO'),
-  reclutador('RECLUTADOR');
+  candidato('CANDIDATO', 'Candidato'),
+  reclutador('RECLUTADOR', 'Reclutador');
 
-  const Rol(this.valorApi);
+  const Rol(this.valorApi, this.etiqueta);
 
   /// Lo que se manda al backend.
   final String valorApi;
+
+  /// Lo que se enseña en pantalla.
+  final String etiqueta;
+
+  /// Convierte lo que devuelve el backend ('CANDIDATO'/'RECLUTADOR') en el
+  /// enum. Se usa al leer el usuario que llega en la respuesta de login o
+  /// register para saber qué pestañas mostrarle en el home.
+  static Rol desdeApi(String valor) =>
+      Rol.values.firstWhere((r) => r.valorApi == valor);
 }
 
 /// Llamadas de autenticación al backend (/api/auth).
