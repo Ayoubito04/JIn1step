@@ -86,7 +86,11 @@ export async function ejecutarAutopilot(usuarioId: string) {
     )
 
     const elegibles = puntuadas
-        .filter((p) => p.match.puntuacion >= preferencias.scoreMinimo)
+        .filter(
+            (p) =>
+                !p.match.sinRequisitos &&
+                p.match.puntuacion >= preferencias.scoreMinimo,
+        )
         .sort((a, b) => b.match.puntuacion - a.match.puntuacion)
         .slice(0, restante)
 
@@ -120,4 +124,31 @@ export async function ejecutarAutopilot(usuarioId: string) {
             score: e.match.puntuacion,
         })),
     }
+}
+
+// Trabajo diario del servidor. Ejecuta únicamente preferencias activas con un
+// CV asignado; ejecutarAutopilot vuelve a validar suscripción, CV y límites.
+// El recorrido secuencial limita la carga sobre la base de datos.
+export async function ejecutarAutopilotsActivos() {
+    const preferencias = await prisma.preferenciasAutopilot.findMany({
+        where: { activo: true, cvId: { not: null } },
+        select: { usuarioId: true },
+    })
+
+    let candidaturasCreadas = 0
+    let fallos = 0
+
+    for (const { usuarioId } of preferencias) {
+        try {
+            const resultado = await ejecutarAutopilot(usuarioId)
+            candidaturasCreadas += resultado.creadas
+        } catch (error) {
+            // Un usuario sin suscripción vigente o con datos obsoletos no debe
+            // impedir que el resto de candidatos reciban su pasada diaria.
+            fallos += 1
+            console.error('No se pudo ejecutar una pasada del autopiloto:', error)
+        }
+    }
+
+    return { usuariosProcesados: preferencias.length, candidaturasCreadas, fallos }
 }

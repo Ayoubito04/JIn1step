@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/ofertas.services.dart';
-import 'ofertaDetalle.dart';
+import 'oferta_detalle.dart';
 
 class Ofertas extends StatefulWidget {
   const Ofertas({super.key, this.ofertaService});
@@ -21,6 +21,7 @@ class _OfertasState extends State<Ofertas> {
 
   final _busquedaCtrl = TextEditingController();
   String _busqueda = '';
+  String? _ubicacionFiltro;
 
   // null = "Todas". Los otros tres son exactamente los valores del enum
   // Modalidad del backend, así el filtro nunca desincroniza con la API.
@@ -43,13 +44,28 @@ class _OfertasState extends State<Ofertas> {
         return false;
       }
 
+      final empresa = oferta['empresa'] as Map<String, dynamic>?;
+      final ubicacion = (empresa?['ubicacion'] as String? ?? '').trim();
+      if (_ubicacionFiltro != null && ubicacion != _ubicacionFiltro) {
+        return false;
+      }
+
       if (texto.isEmpty) return true;
 
       final titulo = (oferta['titulo'] as String? ?? '').toLowerCase();
-      final empresa = oferta['empresa'] as Map<String, dynamic>?;
       final nombreEmpresa = (empresa?['nombre'] as String? ?? '').toLowerCase();
+      final requisitos = oferta['requisitos'] as List? ?? const [];
+      final habilidades = requisitos
+          .whereType<Map<String, dynamic>>()
+          .map((requisito) =>
+              ((requisito['habilidad'] as Map<String, dynamic>?)?['nombre']
+                      as String? ??
+                  '')
+              .toLowerCase());
 
-      return titulo.contains(texto) || nombreEmpresa.contains(texto);
+      return titulo.contains(texto) ||
+          nombreEmpresa.contains(texto) ||
+          habilidades.any((habilidad) => habilidad.contains(texto));
     }).toList();
   }
 
@@ -65,12 +81,11 @@ class _OfertasState extends State<Ofertas> {
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
         centerTitle: false,
+        toolbarHeight: 68,
       ),
       body: Column(
         children: [
           _buscador(theme),
-          _filtrosModalidad(theme),
-          const SizedBox(height: 4),
           Expanded(
             child: FutureBuilder<List<Map<String, dynamic>>>(
               future: _futuroOfertas,
@@ -113,11 +128,31 @@ class _OfertasState extends State<Ofertas> {
                   );
                 }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  itemCount: ofertas.length,
-                  itemBuilder: (context, index) =>
-                      _tarjetaOferta(theme, ofertas[index]),
+                final ubicaciones = todas
+                    .map((oferta) =>
+                        (oferta['empresa'] as Map<String, dynamic>?)?['ubicacion']
+                            as String?)
+                    .whereType<String>()
+                    .map((ubicacion) => ubicacion.trim())
+                    .where((ubicacion) => ubicacion.isNotEmpty)
+                    .toSet()
+                    .toList()
+                  ..sort();
+
+                return Column(
+                  children: [
+                    _filtrosModalidad(theme),
+                    const SizedBox(height: 8),
+                    _filtroUbicacion(theme, ubicaciones),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        itemCount: ofertas.length,
+                        itemBuilder: (context, index) =>
+                            _tarjetaOferta(theme, ofertas[index]),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -129,12 +164,12 @@ class _OfertasState extends State<Ofertas> {
 
   Widget _buscador(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
       child: TextField(
         controller: _busquedaCtrl,
         onChanged: (valor) => setState(() => _busqueda = valor),
         decoration: InputDecoration(
-          hintText: 'Buscar por puesto o empresa',
+          hintText: 'Buscar por puesto, empresa o habilidad',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _busqueda.isEmpty
               ? null
@@ -146,12 +181,39 @@ class _OfertasState extends State<Ofertas> {
                   },
                 ),
           filled: true,
-          fillColor: theme.colorScheme.surfaceContainerHighest,
+          fillColor: Colors.white,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide.none,
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _filtroUbicacion(ThemeData theme, List<String> ubicaciones) {
+    final valor = ubicaciones.contains(_ubicacionFiltro) ? _ubicacionFiltro : null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: DropdownButtonFormField<String?>(
+        initialValue: valor,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'Ubicación de la empresa',
+          prefixIcon: const Icon(Icons.location_on_outlined),
+          filled: true,
+          fillColor: theme.colorScheme.surfaceContainerLow,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        items: [
+          const DropdownMenuItem<String?>(value: null, child: Text('Todas las ubicaciones')),
+          for (final ubicacion in ubicaciones)
+            DropdownMenuItem<String?>(value: ubicacion, child: Text(ubicacion)),
+        ],
+        onChanged: (value) => setState(() => _ubicacionFiltro = value),
       ),
     );
   }
@@ -223,12 +285,8 @@ class _OfertasState extends State<Ofertas> {
     final modalidad = oferta['modalidad'] as String?;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: theme.colorScheme.outlineVariant),
-      ),
+      margin: const EdgeInsets.only(bottom: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
         onTap: () {
@@ -238,7 +296,7 @@ class _OfertasState extends State<Ofertas> {
           );
         },
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

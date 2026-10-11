@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/app_theme.dart';
 import '../services/auth.service.dart';
 
 // home.dart NO se importa: se navega con pushNamedAndRemoveUntil('/home', ...),
@@ -147,15 +148,16 @@ class _LoginScreenState extends State<LoginScreen>
     return Scaffold(
       // SafeArea evita que el contenido quede bajo la barra de estado o
       // el notch del móvil.
-      body: SafeArea(
-        child: Center(
+      body: AuthBackdrop(
+        child: SafeArea(
+          child: Center(
           // Con scroll, al abrir el teclado el formulario se desplaza en
           // vez de desbordar con la franja amarilla y negra.
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               // En web o tablet, que el formulario no ocupe toda la pantalla.
-              constraints: const BoxConstraints(maxWidth: 420),
+              constraints: const BoxConstraints(maxWidth: 470),
               child: Column(
                 children: [
                   _construirCabecera(context),
@@ -177,6 +179,7 @@ class _LoginScreenState extends State<LoginScreen>
                 ],
               ),
             ),
+          ),
           ),
         ),
       ),
@@ -204,13 +207,24 @@ class _LoginScreenState extends State<LoginScreen>
             width: 84,
             height: 84,
             decoration: BoxDecoration(
-              color: esquema.primaryContainer,
-              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [esquema.primary, const Color(0xFF8277F2)],
+              ),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: esquema.primary.withValues(alpha: .25),
+                  blurRadius: 28,
+                  offset: const Offset(0, 12),
+                ),
+              ],
             ),
             child: Icon(
               Icons.work_outline,
               size: 42,
-              color: esquema.onPrimaryContainer,
+              color: Colors.white,
             ),
           ),
         ),
@@ -256,9 +270,10 @@ class _LoginScreenState extends State<LoginScreen>
       // estándar de Material 3.
       child: _aparecer(
         inicio: 0.25,
-        child: Card(
+        child: GlassPanel(
+          padding: const EdgeInsets.all(26),
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.zero,
             child: Form(
               key: _formKey,
               child: Column(

@@ -1,124 +1,182 @@
-// Sistema de diseño de la app: Material Design 3, el lenguaje visual propio
-// de Google (el mismo que usan Gmail, Drive o Google One). Nada de
-// desenfoques ni degradados de fondo: M3 se apoya en SUPERFICIES TONALES
-// (variaciones del mismo color en distinta intensidad) para dar profundidad
-// sin sombras pesadas ni cristal.
-//
-// Todo lo visual vive aquí para no repetir colores sueltos por cada
-// pantalla: si mañana cambia el azul de marca, se toca un archivo y cambia
-// toda la app.
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
   AppColors._();
 
-  /// Azul semilla: a partir de él, ColorScheme.fromSeed genera TODA la
-  /// paleta tonal (primario, contenedores, superficies...) siguiendo el
-  /// algoritmo de Material You. No hay que definir el resto de tonos a
-  /// mano; los provee el propio Material 3.
-  // Azul índigo vivo, más saturado que el azul plano anterior: es el tono
-  // que se pidió al enseñar una referencia visual de una app de empleo.
-  static const azul = Color(0xFF4F46E5);
+  static const azul = Color(0xFF5546E8);
+  static const tinta = Color(0xFF17213B);
+  static const fondo = Color(0xFFF6F7FC);
+  static const menta = Color(0xFFB8F1DB);
 }
 
-/// El ThemeData de toda la app. Se usa en main.dart; ningún widget debería
-/// escribir un color a mano si existe un equivalente en el colorScheme.
 ThemeData construirTemaApp() {
-  final esquemaColor = ColorScheme.fromSeed(
+  final esquema = ColorScheme.fromSeed(
     seedColor: AppColors.azul,
     brightness: Brightness.light,
+    surface: AppColors.fondo,
   );
-
-  // Roboto es la tipografía de Google para Android y Material Design (es la
-  // que usan Gmail, Drive, Maps...). google_fonts.dart es, literalmente, el
-  // paquete de fuentes publicado por Google.
-  final tipografia = GoogleFonts.robotoTextTheme();
+  final texto = GoogleFonts.interTextTheme(ThemeData.light().textTheme).apply(
+    bodyColor: AppColors.tinta,
+    displayColor: AppColors.tinta,
+  );
 
   return ThemeData(
     useMaterial3: true,
-    colorScheme: esquemaColor,
-    textTheme: tipografia,
-    // El fondo de las pantallas es la superficie MÁS CLARA del esquema, no
-    // blanco puro ni gris fijo: así cambia solo si cambia el azul semilla.
-    scaffoldBackgroundColor: esquemaColor.surface,
+    colorScheme: esquema,
+    textTheme: texto,
+    scaffoldBackgroundColor: AppColors.fondo,
     appBarTheme: AppBarTheme(
-      backgroundColor: esquemaColor.surface,
-      foregroundColor: esquemaColor.onSurface,
+      backgroundColor: AppColors.fondo,
+      foregroundColor: AppColors.tinta,
       elevation: 0,
       scrolledUnderElevation: 0,
+      titleTextStyle: texto.titleLarge?.copyWith(fontWeight: FontWeight.w700),
     ),
-    // FilledButton y no ElevatedButton: en Material 3, el botón "relleno"
-    // (fondo sólido, sin sombra) es el que Google usa para la acción
-    // principal. ElevatedButton se reserva para casos con más énfasis de
-    // elevación, que aquí no hace falta.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: ZoomPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.windows: ZoomPageTransitionsBuilder(),
+        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.linux: ZoomPageTransitionsBuilder(),
+      },
+    ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size.fromHeight(52),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        minimumSize: const Size.fromHeight(54),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
     ),
-    // ElevatedButton se deja también configurado por si algún sitio lo usa,
-    // para que no desentone si aparece sin querer.
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
         minimumSize: const Size.fromHeight(52),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        side: BorderSide(color: esquema.outlineVariant),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      // surfaceContainerHighest: el tono que Material 3 reserva para
-      // "superficie rellena dentro de una superficie", como los campos de
-      // texto. Cambia solo si cambia el azul semilla, nunca un gris fijo.
-      fillColor: esquemaColor.surfaceContainerHighest,
+      fillColor: Colors.white.withValues(alpha: .82),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: esquema.outlineVariant.withValues(alpha: .6)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: esquema.outlineVariant.withValues(alpha: .6)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: esquemaColor.primary, width: 2),
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: esquema.primary, width: 1.6),
       ),
     ),
     cardTheme: CardThemeData(
       elevation: 0,
-      // Las tarjetas en M3 no se distinguen por sombra sino por un tono de
-      // superficie ligeramente distinto al fondo.
-      color: esquemaColor.surfaceContainer,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      color: Colors.white.withValues(alpha: .88),
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: esquema.outlineVariant.withValues(alpha: .55)),
+      ),
     ),
     chipTheme: ChipThemeData(
-      backgroundColor: esquemaColor.secondaryContainer,
-      labelStyle: TextStyle(color: esquemaColor.onSecondaryContainer, fontWeight: FontWeight.w600),
+      backgroundColor: esquema.secondaryContainer.withValues(alpha: .65),
+      selectedColor: esquema.primary,
+      labelStyle: TextStyle(color: esquema.onSecondaryContainer, fontWeight: FontWeight.w600),
       side: BorderSide.none,
+      shape: const StadiumBorder(),
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: esquemaColor.surfaceContainer,
+      backgroundColor: Colors.white.withValues(alpha: .94),
       elevation: 0,
-      // La "píldora" que resalta el icono activo: es el patrón exacto que
-      // usan Gmail o Google Fotos en su barra inferior.
-      indicatorColor: esquemaColor.secondaryContainer,
-      labelTextStyle: WidgetStateProperty.resolveWith(
-        (states) => TextStyle(
-          fontSize: 12,
-          fontWeight: states.contains(WidgetState.selected) ? FontWeight.w600 : FontWeight.normal,
-          color: states.contains(WidgetState.selected) ? esquemaColor.onSurface : esquemaColor.onSurfaceVariant,
-        ),
-      ),
+      indicatorColor: esquema.primary.withValues(alpha: .12),
+      labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+        fontSize: 11,
+        fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
+        color: states.contains(WidgetState.selected) ? esquema.primary : esquema.onSurfaceVariant,
+      )),
     ),
   );
 }
 
-/// Círculo de acción rápida con icono + etiqueta. En Material You, el
-/// "contenedor tonal" (fondo primaryContainer, icono onPrimaryContainer) es
-/// el patrón estándar para botones de icono destacados, el mismo que usa
-/// Google Fotos para "Buscar / Crear / Compartir" en su pantalla principal.
+/// Superficie de vidrio discreta para paneles destacados, con blur reducido.
+class GlassPanel extends StatelessWidget {
+  const GlassPanel({super.key, required this.child, this.padding = const EdgeInsets.all(20)});
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(26),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .76),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: Colors.white.withValues(alpha: .85)),
+            boxShadow: [BoxShadow(color: AppColors.tinta.withValues(alpha: .06), blurRadius: 24, offset: const Offset(0, 10))],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Fondo compartido de acceso y registro, decorativo y de bajo coste visual.
+class AuthBackdrop extends StatelessWidget {
+  const AuthBackdrop({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFF5F3FF), Color(0xFFF9FAFF), Color(0xFFEEF7FF)],
+            ),
+          ),
+        ),
+        Positioned(
+          top: -95,
+          right: -80,
+          child: _orb(Color(0x555546E8), 250),
+        ),
+        Positioned(
+          bottom: -115,
+          left: -95,
+          child: _orb(Color(0x557BC8FF), 270),
+        ),
+        child,
+      ],
+    );
+  }
+
+  Widget _orb(Color color, double size) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
+    ),
+  );
+}
+
 class QuickAction extends StatelessWidget {
   const QuickAction({super.key, required this.icono, required this.etiqueta, required this.onTap});
 
@@ -129,28 +187,21 @@ class QuickAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final esquema = Theme.of(context).colorScheme;
-
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(32),
+      borderRadius: BorderRadius.circular(22),
       child: Padding(
         padding: const EdgeInsets.all(4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(color: esquema.primaryContainer, shape: BoxShape.circle),
-              child: Icon(icono, color: esquema.onPrimaryContainer),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              etiqueta,
-              style: TextStyle(fontSize: 12, color: esquema.onSurfaceVariant, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(color: esquema.primary.withValues(alpha: .09), borderRadius: BorderRadius.circular(19)),
+            child: Icon(icono, color: esquema.primary),
+          ),
+          const SizedBox(height: 7),
+          Text(etiqueta, style: TextStyle(fontSize: 11, color: esquema.onSurfaceVariant, fontWeight: FontWeight.w600)),
+        ]),
       ),
     );
   }

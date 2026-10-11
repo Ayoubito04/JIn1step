@@ -22,6 +22,7 @@ export type ResultadoMatch = {
     obligatoriasFaltantes: string[]//Las faltantes también
     opcionalesCubiertas: string[]
     opcionalesFaltantes: string[]
+    sinRequisitos: boolean
 }
 
 export async function calcularMatch(
@@ -67,7 +68,9 @@ export async function calcularMatch(
     //todos. Se devuelve 100 en vez de 0 para no penalizar a los candidatos por
     //un descuido del reclutador (y para que se note que faltan requisitos).
     if (requisitos.length === 0) {
-        return { puntuacion: 100, ...detalle }
+        //Sin requisitos no existe una comparación: no atribuir una puntuación
+        //perfecta ni dejar que el autopiloto tome esto como un encaje.
+        return { puntuacion: 0, sinRequisitos: true, ...detalle }
     }
 
     const ratioObligatorias = obligatorias.length
@@ -90,6 +93,7 @@ export async function calcularMatch(
 
     return {
         puntuacion: Math.round(puntuacion * 100 * 100) / 100,
+        sinRequisitos: false,
         ...detalle,
     }
 }

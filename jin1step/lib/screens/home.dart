@@ -19,8 +19,12 @@ import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../services/auth.service.dart';
 import '../services/ofertas.services.dart';
+import 'autopilot.dart';
+import 'mis_cvs.dart';
+import 'mensajes.dart';
+import 'mis_ofertas.dart';
+import 'mis_postulaciones.dart';
 import 'ofertas.dart';
-import 'publicar_oferta.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key, this.ofertasService});
@@ -113,22 +117,20 @@ class _HomeState extends State<Home> {
               etiqueta: 'Ofertas',
               icono: Icons.work_outline,
               iconoActivo: Icons.work,
-              // Ofertas ya trae su propio Scaffold+AppBar, igual que
-              // _MisOfertasTab de aquí abajo: no hace falta envolverla en
-              // _Encabezado, se usa tal cual como cuerpo de la pestaña.
+              // Ofertas administra su propio Scaffold y AppBar.
               pagina: Ofertas(ofertaService: widget.ofertasService),
             )
           : const _Seccion(
               etiqueta: 'Mis ofertas',
               icono: Icons.business_center_outlined,
               iconoActivo: Icons.business_center,
-              pagina: _MisOfertasTab(),
+              pagina: MisOfertasPage(),
             ),
-      const _Seccion(
+      _Seccion(
         etiqueta: 'Mensajes',
         icono: Icons.chat_bubble_outline,
         iconoActivo: Icons.chat_bubble,
-        pagina: _MensajesTab(),
+        pagina: MensajesPage(usuarioId: usuario['id'] as String),
       ),
       _Seccion(
         etiqueta: 'Perfil',
@@ -201,9 +203,9 @@ class _Encabezado extends StatelessWidget {
       child: Text(
         titulo,
         style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
+          fontWeight: FontWeight.w600,
+          color: Theme.of(context).colorScheme.onSurface,
+        ),
       ),
     );
   }
@@ -246,14 +248,19 @@ class _InicioTab extends StatelessWidget {
                 backgroundColor: esquema.primaryContainer,
                 child: Text(
                   (usuario['nombre'] as String).substring(0, 1).toUpperCase(),
-                  style: TextStyle(color: esquema.onPrimaryContainer, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: esquema.onPrimaryContainer,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   'Hola, ${usuario['nombre']}',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -278,22 +285,40 @@ class _InicioTab extends StatelessWidget {
           // Tarjeta "hero" tonal: fondo primaryContainer, el patrón de
           // Material You para destacar el dato más importante de la
           // pantalla (aquí, sin el degradado ni el cristal de antes).
-          Card(
-            color: esquema.primaryContainer,
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [esquema.primary, const Color(0xFF8177F4)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: esquema.primary.withValues(alpha: .22),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(22),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    esCandidato ? 'Postulaciones activas' : 'Ofertas publicadas',
-                    style: TextStyle(color: esquema.onPrimaryContainer.withValues(alpha: 0.8)),
+                    esCandidato
+                        ? 'Postulaciones activas'
+                        : 'Ofertas publicadas',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.82),
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '0',
                     style: TextStyle(
-                      color: esquema.onPrimaryContainer,
+                      color: Colors.white,
                       fontSize: 36,
                       fontWeight: FontWeight.bold,
                     ),
@@ -305,23 +330,56 @@ class _InicioTab extends StatelessWidget {
           const SizedBox(height: 16),
           // Accesos rápidos, como "Buscar / Crear / Compartir" en la
           // pantalla principal de Google Fotos.
-          Card(
+          GlassPanel(
+            padding: const EdgeInsets.symmetric(vertical: 12),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: EdgeInsets.zero,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: esCandidato
                     ? [
-                        QuickAction(icono: Icons.search, etiqueta: 'Ofertas', onTap: () => onIrAPestana(1)),
-                        QuickAction(icono: Icons.smart_toy_outlined, etiqueta: 'Autopiloto', onTap: () => onIrAPestana(3)),
-                        QuickAction(icono: Icons.chat_bubble_outline, etiqueta: 'Mensajes', onTap: () => onIrAPestana(2)),
-                        QuickAction(icono: Icons.person_outline, etiqueta: 'Perfil', onTap: () => onIrAPestana(3)),
+                        QuickAction(
+                          icono: Icons.search,
+                          etiqueta: 'Ofertas',
+                          onTap: () => onIrAPestana(1),
+                        ),
+                        QuickAction(
+                          icono: Icons.smart_toy_outlined,
+                          etiqueta: 'Autopiloto',
+                          onTap: () => onIrAPestana(3),
+                        ),
+                        QuickAction(
+                          icono: Icons.chat_bubble_outline,
+                          etiqueta: 'Mensajes',
+                          onTap: () => onIrAPestana(2),
+                        ),
+                        QuickAction(
+                          icono: Icons.person_outline,
+                          etiqueta: 'Perfil',
+                          onTap: () => onIrAPestana(3),
+                        ),
                       ]
                     : [
-                        QuickAction(icono: Icons.add_business_outlined, etiqueta: 'Publicar', onTap: () => onIrAPestana(1)),
-                        QuickAction(icono: Icons.groups_outlined, etiqueta: 'Candidatos', onTap: () => onIrAPestana(1)),
-                        QuickAction(icono: Icons.chat_bubble_outline, etiqueta: 'Mensajes', onTap: () => onIrAPestana(2)),
-                        QuickAction(icono: Icons.person_outline, etiqueta: 'Perfil', onTap: () => onIrAPestana(3)),
+                        QuickAction(
+                          icono: Icons.add_business_outlined,
+                          etiqueta: 'Publicar',
+                          onTap: () => onIrAPestana(1),
+                        ),
+                        QuickAction(
+                          icono: Icons.groups_outlined,
+                          etiqueta: 'Candidatos',
+                          onTap: () => onIrAPestana(1),
+                        ),
+                        QuickAction(
+                          icono: Icons.chat_bubble_outline,
+                          etiqueta: 'Mensajes',
+                          onTap: () => onIrAPestana(2),
+                        ),
+                        QuickAction(
+                          icono: Icons.person_outline,
+                          etiqueta: 'Perfil',
+                          onTap: () => onIrAPestana(3),
+                        ),
                       ],
               ),
             ),
@@ -341,7 +399,9 @@ class _InicioTab extends StatelessWidget {
               Expanded(
                 child: _tarjetaResumen(
                   context,
-                  icono: esCandidato ? Icons.smart_toy_outlined : Icons.groups_outlined,
+                  icono: esCandidato
+                      ? Icons.smart_toy_outlined
+                      : Icons.groups_outlined,
                   titulo: esCandidato ? 'Autopiloto' : 'Candidatos',
                   valor: esCandidato ? 'Inactivo' : '0',
                 ),
@@ -369,8 +429,18 @@ class _InicioTab extends StatelessWidget {
           children: [
             Icon(icono, color: esquema.primary),
             const SizedBox(height: 8),
-            Text(valor, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: esquema.onSurface)),
-            Text(titulo, style: TextStyle(fontSize: 12, color: esquema.onSurfaceVariant)),
+            Text(
+              valor,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: esquema.onSurface,
+              ),
+            ),
+            Text(
+              titulo,
+              style: TextStyle(fontSize: 12, color: esquema.onSurfaceVariant),
+            ),
           ],
         ),
       ),
@@ -378,74 +448,7 @@ class _InicioTab extends StatelessWidget {
   }
 }
 
-
-// ─── Mis ofertas (reclutador) ───────────────────────────────────────────
-
-/// TODO: mover a screens/mis_ofertas.dart. Backend: GET /ofertas/mias,
-/// POST /ofertas para publicar una nueva.
-class _MisOfertasTab extends StatelessWidget {
-  const _MisOfertasTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: const Column(
-        children: [
-          _Encabezado(titulo: 'Mis ofertas'),
-          Expanded(
-            child: _MarcadorDeSeccion(
-              icono: Icons.business_center_outlined,
-              texto: 'Aquí irán las ofertas que has publicado',
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          // El formulario devuelve true si se publicó de verdad. Por ahora
-          // solo se avisa con un SnackBar: la lista de "Mis ofertas" sigue
-          // siendo un marcador, todavía no lista nada, así que no hay nada
-          // que refrescar aquí de momento.
-          final publicada = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (context) => const PublicarOferta()),
-          );
-
-          if (publicada == true && context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Oferta publicada')),
-            );
-          }
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Publicar oferta'),
-      ),
-    );
-  }
-}
-
 // ─── Mensajes ───────────────────────────────────────────────────────────
-
-/// TODO: mover a screens/mensajes.dart. Backend: GET /conversaciones para
-/// la lista de chats, GET /conversaciones/:id/mensajes para abrir uno.
-class _MensajesTab extends StatelessWidget {
-  const _MensajesTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Column(
-      children: [
-        _Encabezado(titulo: 'Mensajes'),
-        Expanded(
-          child: _MarcadorDeSeccion(
-            icono: Icons.chat_bubble_outline,
-            texto: 'Aquí irán tus conversaciones',
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 // ─── Perfil ─────────────────────────────────────────────────────────────
 
@@ -477,7 +480,11 @@ class _PerfilTab extends StatelessWidget {
                   backgroundColor: esquema.primaryContainer,
                   child: Text(
                     (usuario['nombre'] as String).substring(0, 1).toUpperCase(),
-                    style: TextStyle(fontSize: 28, color: esquema.onPrimaryContainer, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 28,
+                      color: esquema.onPrimaryContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -510,18 +517,44 @@ class _PerfilTab extends StatelessWidget {
               context,
               icono: Icons.smart_toy_outlined,
               titulo: 'Autopiloto de postulaciones',
-              onTap: () {
-                // TODO: pantalla de preferencias del autopiloto
-                // (GET/PATCH /preferencias-autopilot) y suscripción
-                // (GET/POST /suscripciones), que es lo que lo desbloquea.
-              },
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const AutopilotPage())),
             ),
+          if (rol == Rol.candidato) ...[
+            _opcionPerfil(
+              context,
+              icono: Icons.send_outlined,
+              titulo: 'Mis candidaturas',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MisPostulacionesPage()),
+              ),
+            ),
+            _opcionPerfil(
+              context,
+              icono: Icons.description_outlined,
+              titulo: 'Mis currículums',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const MisCvsPage(seleccionable: false),
+                ),
+              ),
+            ),
+          ],
           const Divider(height: 32),
           Card(
             child: ListTile(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               leading: Icon(Icons.logout, color: esquema.error),
-              title: Text('Cerrar sesión', style: TextStyle(color: esquema.error, fontWeight: FontWeight.w600)),
+              title: Text(
+                'Cerrar sesión',
+                style: TextStyle(
+                  color: esquema.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               onTap: onCerrarSesion,
             ),
           ),
@@ -546,7 +579,10 @@ class _PerfilTab extends StatelessWidget {
           backgroundColor: esquema.primaryContainer,
           child: Icon(icono, color: esquema.onPrimaryContainer),
         ),
-        title: Text(titulo, style: const TextStyle(fontWeight: FontWeight.w500)),
+        title: Text(
+          titulo,
+          style: const TextStyle(fontWeight: FontWeight.w500),
+        ),
         trailing: Icon(Icons.chevron_right, color: esquema.onSurfaceVariant),
         onTap: onTap,
       ),

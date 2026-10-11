@@ -17,6 +17,21 @@ export const crearOfertaSchema = z.object({
         .min(1, 'La descripción es obligatoria')
         .max(1000, 'La descripción no puede superar los 1000 caracteres'),
     modalidad: z.enum(['REMOTO', 'HIBRIDO', 'PRESENCIAL']),
+    requisitos: z
+        .array(
+            z.object({
+                habilidadId: z.uuid('habilidadId debe ser un uuid válido'),
+                obligatorio: z.boolean(),
+            }).strict(),
+        )
+        .min(1, 'Añade al menos un requisito para calcular la compatibilidad')
+        .max(30, 'Una oferta no puede tener más de 30 requisitos')
+        .refine(
+            (requisitos) =>
+                new Set(requisitos.map((requisito) => requisito.habilidadId)).size ===
+                requisitos.length,
+            'No repitas la misma habilidad',
+        ),
 }).strict()
 
 //fechaPublicacion no se acepta del cliente: la pone la base de datos con
@@ -27,7 +42,7 @@ export const crearOfertaSchema = z.object({
 //empresaId y reclutadorId no están: una oferta no cambia de dueño ni de empresa.
 //Aquí sí se acepta estado, que es como un reclutador cierra una oferta.
 export const actualizarOfertaSchema = crearOfertaSchema
-    .omit({ empresaId: true })
+    .omit({ empresaId: true, requisitos: true })
     .extend({
         estado: z.enum(['ABIERTA', 'CERRADA']),
     })

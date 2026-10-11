@@ -25,7 +25,15 @@ const CON_CV_Y_OFERTA = {
             modalidad: true,
             estado: true,
             reclutadorId: true,
-            empresa: { select: { id: true, nombre: true } },
+            empresa: {
+                select: { id: true, nombre: true, sitioWeb: true },
+            },
+            requisitos: {
+                select: {
+                    obligatorio: true,
+                    habilidad: { select: { id: true, nombre: true } },
+                },
+            },
         },
     },
 } as const
@@ -54,7 +62,11 @@ export async function crearPostulacion(
 
     const oferta = await prisma.oferta.findUnique({
         where: { id: datos.ofertaId },
-        select: { id: true, estado: true },
+        select: {
+            id: true,
+            estado: true,
+            _count: { select: { requisitos: true } },
+        },
     })
 
     if (!oferta) {
@@ -63,6 +75,13 @@ export async function crearPostulacion(
 
     if (oferta.estado !== 'ABIERTA') {
         throw new HttpError(409, 'Esta oferta ya no admite candidaturas')
+    }
+
+    if (oferta._count.requisitos === 0) {
+        throw new HttpError(
+            409,
+            'Esta oferta todavía no tiene requisitos; la empresa debe completarlos antes de aceptar candidaturas',
+        )
     }
 
     //La restricción @@unique de la BD cubre (cvId, ofertaId), pero no llega

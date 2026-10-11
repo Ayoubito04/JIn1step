@@ -24,6 +24,7 @@ const EMPRESA_PUBLICA = {
         nombre: true,
         sector: true,
         ubicacion: true,
+        sitioWeb: true,
     },
 } as const
 
@@ -32,6 +33,12 @@ const EMPRESA_PUBLICA = {
 const CON_RECLUTADOR_Y_EMPRESA = {
     reclutador: RECLUTADOR_PUBLICO,
     empresa: EMPRESA_PUBLICA,
+    requisitos: {
+        select: {
+            obligatorio: true,
+            habilidad: { select: { id: true, nombre: true } },
+        },
+    },
 } as const
 
 export async function crearOferta(reclutadorId: string, datos: CrearOfertaInput) {
@@ -46,17 +53,40 @@ export async function crearOferta(reclutadorId: string, datos: CrearOfertaInput)
         throw new HttpError(404, 'La empresa indicada no existe')
     }
 
-    return prisma.oferta.create({
-        data: {
-            empresaId: datos.empresaId,
-            //El id sale del token, nunca del body
-            reclutadorId,
-            titulo: datos.titulo,
-            descripcion: datos.descripcion,
-            modalidad: datos.modalidad,
-            //estado y fechaPublicacion los pone la BD con sus @default
-        },
-        include: CON_RECLUTADOR_Y_EMPRESA,
+    const habilidadIds = datos.requisitos.map((requisito) => requisito.habilidadId)
+    const habilidadesExistentes = await prisma.habilidad.count({
+        where: { id: { in: habilidadIds } },
+    })
+
+    if (habilidadesExistentes !== habilidadIds.length) {
+        throw new HttpError(404, 'Alguna de las habilidades no existe')
+    }
+
+    return prisma.$transaction(async (tx) => {
+        const oferta = await tx.oferta.create({
+            data: {
+                empresaId: datos.empresaId,
+                //El id sale del token, nunca del body
+                reclutadorId,
+                titulo: datos.titulo,
+                descripcion: datos.descripcion,
+                modalidad: datos.modalidad,
+            },
+            select: { id: true },
+        })
+
+        await tx.ofertaRequisito.createMany({
+            data: datos.requisitos.map((requisito) => ({
+                ofertaId: oferta.id,
+                habilidadId: requisito.habilidadId,
+                obligatorio: requisito.obligatorio,
+            })),
+        })
+
+        return tx.oferta.findUniqueOrThrow({
+            where: { id: oferta.id },
+            include: CON_RECLUTADOR_Y_EMPRESA,
+        })
     })
 }
 

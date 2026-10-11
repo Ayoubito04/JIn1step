@@ -12,7 +12,7 @@ const PREFERENCIAS_POR_DEFECTO = {
     activo: false,
     cvId: null,
     scoreMinimo: 70,
-    maxPorDia: 200,
+    maxPorDia: 5,
     activadoEn: null,
     revocadoEn: null,
 }

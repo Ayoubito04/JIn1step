@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/app_theme.dart';
 import '../services/auth.service.dart';
 // home.dart NO se importa: se navega con pushNamedAndRemoveUntil('/home', ...),
 // la ruta con nombre que ya registra main.dart, sin referenciar la clase Home.
@@ -140,13 +141,14 @@ class _RegisterPageState extends State<RegisterPage>
     // Sin degradado ni AppBar transparente: fondo plano (scaffoldBackground
     // del tema) y una AppBar normal, solo para dar la flecha de "volver".
     return Scaffold(
-      appBar: AppBar(),
-      body: SafeArea(
-        child: Center(
+      appBar: AppBar(backgroundColor: Colors.transparent),
+      body: AuthBackdrop(
+        child: SafeArea(
+          child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
+              constraints: const BoxConstraints(maxWidth: 520),
               child: Column(
                 children: [
                   _aparecer(
@@ -189,6 +191,7 @@ class _RegisterPageState extends State<RegisterPage>
               ),
             ),
           ),
+          ),
         ),
       ),
     );
@@ -209,9 +212,10 @@ class _RegisterPageState extends State<RegisterPage>
       // salen de cardTheme (core/app_theme.dart).
       child: _aparecer(
         inicio: 0.15,
-        child: Card(
+        child: GlassPanel(
+          padding: const EdgeInsets.all(26),
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.zero,
             child: Form(
               key: _formKey,
               child: Column(

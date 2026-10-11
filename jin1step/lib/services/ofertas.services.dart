@@ -20,12 +20,45 @@ class OfertasService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getMisOfertas() async {
+    try {
+      final respuesta = await ApiClient.dio.get('/ofertas/mias');
+      return (respuesta.data as List).cast<Map<String, dynamic>>();
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> listarRequisitos(String ofertaId) async {
+    try {
+      final respuesta = await ApiClient.dio.get('/ofertas/$ofertaId/requisitos');
+      return (respuesta.data as List).cast<Map<String, dynamic>>();
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  Future<void> reemplazarRequisitos({
+    required String ofertaId,
+    required List<Map<String, dynamic>> requisitos,
+  }) async {
+    try {
+      await ApiClient.dio.put(
+        '/ofertas/$ofertaId/requisitos',
+        data: {'requisitos': requisitos},
+      );
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
   //Ahora vamos a publicar ofertas
   Future<Map<String, dynamic>> crearOferta({
     required String empresaId,
     required String titulo,
     required String descripcion,
     required String modalidad, // 'REMOTO' | 'HIBRIDO' | 'PRESENCIAL'
+    required List<Map<String, dynamic>> requisitos,
   }) async {
     try {
       final respuesta = await ApiClient.dio.post(
@@ -35,6 +68,7 @@ class OfertasService {
           'titulo': titulo,
           'descripcion': descripcion,
           'modalidad': modalidad,
+          'requisitos': requisitos,
         },
       );
       return respuesta.data as Map<String, dynamic>;
@@ -49,6 +83,16 @@ class OfertasService {
       await ApiClient.dio.delete('/ofertas/$id', data: {'estado': 'CERRADA'});
       //Esto nos va a permitir poder borrar ofertas
       return;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  //Ahora vamos a ver las ofertas del reclutador
+  Future<Map<String, dynamic>> verOfertasReclutador(String id) async {
+    try {
+      final respuesta = await ApiClient.dio.get('/ofertas/reclutador/$id');
+      return respuesta.data as Map<String, dynamic>;
     } catch (error) {
       throw ApiClient.traducirError(error);
     }

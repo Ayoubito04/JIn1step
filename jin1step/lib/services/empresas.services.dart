@@ -15,4 +15,26 @@ class EmpresasService {
       throw ApiClient.traducirError(error);
     }
   }
+
+  Future<Map<String, dynamic>> crearEmpresa({
+    required String nombre,
+    String? sector,
+    String? ubicacion,
+    String? sitioWeb,
+  }) async {
+    try {
+      final respuesta = await ApiClient.dio.post(
+        '/empresas',
+        data: {
+          'nombre': nombre,
+          if (sector != null && sector.isNotEmpty) 'sector': sector,
+          if (ubicacion != null && ubicacion.isNotEmpty) 'ubicacion': ubicacion,
+          if (sitioWeb != null && sitioWeb.isNotEmpty) 'sitioWeb': sitioWeb,
+        },
+      );
+      return respuesta.data as Map<String, dynamic>;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
 }
