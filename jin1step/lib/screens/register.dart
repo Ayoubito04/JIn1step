@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../core/app_theme.dart';
 import '../services/auth.service.dart';
+import '../widgets/brand_logo.dart';
 // home.dart NO se importa: se navega con pushNamedAndRemoveUntil('/home', ...),
 // la ruta con nombre que ya registra main.dart, sin referenciar la clase Home.
 
@@ -153,6 +154,11 @@ class _RegisterPageState extends State<RegisterPage>
                 children: [
                   _aparecer(
                     inicio: 0.0,
+                    child: const BrandLogo(size: 88),
+                  ),
+                  const SizedBox(height: 12),
+                  _aparecer(
+                    inicio: 0.08,
                     child: Text(
                       'Crea tu cuenta',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
@@ -163,7 +169,7 @@ class _RegisterPageState extends State<RegisterPage>
                   ),
                   const SizedBox(height: 4),
                   _aparecer(
-                    inicio: 0.05,
+                    inicio: 0.13,
                     child: Text(
                       'Empieza a encontrar tu próximo empleo',
                       style: TextStyle(fontSize: 15, color: esquema.onSurfaceVariant),

@@ -1,11 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import 'core/app_theme.dart';
+import 'firebase_options.dart';
 import 'screens/login.dart';
 import 'screens/register.dart';
 import 'screens/home.dart';
+import 'screens/splash_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // FlutterFire se ha configurado para Android. Evita inicializarlo en web y
+  // escritorio hasta que esas plataformas también se registren en Firebase.
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
   runApp(const MyApp());
 }
 
@@ -27,7 +39,7 @@ class MyApp extends StatelessWidget {
       // app pide la ruta "/" en vez de initialRoute. Sin esta entrada, eso
       // revienta con "Could not find a generator for route RouteSettings(/)".
       routes: {
-        '/': (context) => const LoginScreen(),
+        '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterPage(),
         '/home': (context) => const Home(),

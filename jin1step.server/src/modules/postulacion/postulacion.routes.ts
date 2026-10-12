@@ -39,6 +39,16 @@ postulacionRouter.get(
     requireRol('RECLUTADOR'),
     postulacionController.listarPostulacionesDeOferta,
 )
+postulacionRouter.get(
+    '/:id/cv',
+    requireRol('RECLUTADOR'),
+    postulacionController.obtenerCvDePostulacion,
+)
+postulacionRouter.get(
+    '/:id/cv/archivo',
+    requireRol('RECLUTADOR'),
+    postulacionController.descargarCvDePostulacion,
+)
 postulacionRouter.patch(
     '/:id',
     requireRol('RECLUTADOR'),

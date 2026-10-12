@@ -14,10 +14,13 @@
 // primaryContainer / surfaceContainer), sin degradados ni desenfoques. Los
 // colores nunca se escriben a mano: siempre salen de Theme.of(context).
 // colorScheme, que ya deriva del azul semilla en core/app_theme.dart.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
 import '../services/auth.service.dart';
+import '../services/candidato.service.dart';
 import '../services/ofertas.services.dart';
 import 'autopilot.dart';
 import 'mis_cvs.dart';
@@ -42,6 +45,13 @@ class Home extends StatefulWidget {
 
 class _HomeState extends State<Home> {
   int _indice = 0;
+  int _versionMensajes = 0;
+  final _candidatoService = CandidatoService();
+  List<Map<String, dynamic>> _entrevistas = [];
+  Timer? _temporizadorNotificaciones;
+  bool _notificacionesIniciadas = false;
+  bool _notificacionesCargando = true;
+  bool _primeraCargaEntrevistas = true;
 
   /// Los datos del usuario ({id, nombre, apellidos, email, rol}) llegan como
   /// argumento de la ruta, puestos por login.dart / register.dart al navegar
@@ -63,6 +73,7 @@ class _HomeState extends State<Home> {
     if (argumentos is Map<String, dynamic>) {
       _usuario = argumentos;
       _rol = Rol.desdeApi(argumentos['rol'] as String);
+      _iniciarActualizacionEntrevistas();
       return;
     }
 
@@ -77,13 +88,133 @@ class _HomeState extends State<Home> {
     });
   }
 
+  void _iniciarActualizacionEntrevistas() {
+    if (_notificacionesIniciadas || _rol != Rol.candidato) return;
+    _notificacionesIniciadas = true;
+    unawaited(_cargarEntrevistas());
+    _temporizadorNotificaciones = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(_cargarEntrevistas()),
+    );
+  }
+
+  Future<void> _cargarEntrevistas() async {
+    try {
+      final postulaciones = await _candidatoService.listarPostulaciones();
+      final entrevistas = postulaciones
+          .where((postulacion) => postulacion['estado'] == 'ENTREVISTA')
+          .toList();
+      final idsAnteriores = _entrevistas
+          .map((postulacion) => postulacion['id'])
+          .toSet();
+      final hayNuevaEntrevista =
+          !_primeraCargaEntrevistas &&
+          entrevistas.any((postulacion) => !idsAnteriores.contains(postulacion['id']));
+
+      if (!mounted) return;
+      setState(() {
+        _entrevistas = entrevistas;
+        _notificacionesCargando = false;
+      });
+      _primeraCargaEntrevistas = false;
+
+      if (hayNuevaEntrevista) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Te han seleccionado para una entrevista.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _notificacionesCargando = false);
+      _primeraCargaEntrevistas = false;
+    }
+  }
+
+  void _mostrarNotificaciones() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        final esquema = Theme.of(context).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Notificaciones',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Actualizar',
+                      onPressed: () => unawaited(_cargarEntrevistas()),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (_notificacionesCargando && _entrevistas.isEmpty)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (_entrevistas.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 28),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.notifications_none, size: 42, color: esquema.primary),
+                          const SizedBox(height: 10),
+                          const Text('Todavía no tienes entrevistas.'),
+                        ],
+                      ),
+                    ),
+                  )
+                else ...[
+                  for (final postulacion in _entrevistas)
+                    _NotificacionEntrevista(
+                      postulacion: postulacion,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _irAPestana(2);
+                      },
+                    ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _temporizadorNotificaciones?.cancel();
+    super.dispose();
+  }
+
   Future<void> _cerrarSesion() async {
     await AuthService().logout();
     if (!mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (r) => false);
   }
 
-  void _irAPestana(int indice) => setState(() => _indice = indice);
+  void _irAPestana(int indice) => setState(() {
+    _indice = indice;
+    if (indice == 2) _versionMensajes++;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -108,6 +239,8 @@ class _HomeState extends State<Home> {
           usuario: usuario,
           esCandidato: esCandidato,
           onIrAPestana: _irAPestana,
+          entrevistas: _entrevistas,
+          onMostrarNotificaciones: _mostrarNotificaciones,
         ),
       ),
       esCandidato
@@ -120,17 +253,20 @@ class _HomeState extends State<Home> {
               // Ofertas administra su propio Scaffold y AppBar.
               pagina: Ofertas(ofertaService: widget.ofertasService),
             )
-          : const _Seccion(
+          : _Seccion(
               etiqueta: 'Mis ofertas',
               icono: Icons.business_center_outlined,
               iconoActivo: Icons.business_center,
-              pagina: MisOfertasPage(),
+              pagina: MisOfertasPage(usuarioId: usuario['id'] as String),
             ),
       _Seccion(
         etiqueta: 'Mensajes',
         icono: Icons.chat_bubble_outline,
         iconoActivo: Icons.chat_bubble,
-        pagina: MensajesPage(usuarioId: usuario['id'] as String),
+        pagina: MensajesPage(
+          key: ValueKey(_versionMensajes),
+          usuarioId: usuario['id'] as String,
+        ),
       ),
       _Seccion(
         etiqueta: 'Perfil',
@@ -172,6 +308,43 @@ class _HomeState extends State<Home> {
 }
 
 /// Datos de una pestaña: qué icono lleva y qué pinta.
+class _NotificacionEntrevista extends StatelessWidget {
+  const _NotificacionEntrevista({
+    required this.postulacion,
+    required this.onTap,
+  });
+
+  final Map<String, dynamic> postulacion;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final oferta = postulacion['oferta'] as Map<String, dynamic>? ?? {};
+    final empresa = oferta['empresa'] as Map<String, dynamic>? ?? {};
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: Icon(
+            Icons.event_available_outlined,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+        ),
+        title: Text(
+          oferta['titulo'] as String? ?? 'Entrevista',
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(
+          '${empresa['nombre'] ?? 'El reclutador'} te ha seleccionado para una entrevista. Contacta por el chat para acordar fecha y hora.',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
 class _Seccion {
   const _Seccion({
     required this.etiqueta,
@@ -224,10 +397,14 @@ class _InicioTab extends StatelessWidget {
     required this.usuario,
     required this.esCandidato,
     required this.onIrAPestana,
+    required this.entrevistas,
+    required this.onMostrarNotificaciones,
   });
 
   final Map<String, dynamic> usuario;
   final bool esCandidato;
+  final List<Map<String, dynamic>> entrevistas;
+  final VoidCallback onMostrarNotificaciones;
 
   /// Las acciones rápidas saltan a otra pestaña del NavigationBar en vez de
   /// duplicar su contenido aquí.
@@ -264,10 +441,40 @@ class _InicioTab extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              // TODO: notificaciones reales. Por ahora solo visual.
               IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.notifications_none),
+                tooltip: esCandidato ? 'Notificaciones' : null,
+                onPressed: esCandidato ? onMostrarNotificaciones : null,
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.notifications_none),
+                    if (entrevistas.isNotEmpty)
+                      Positioned(
+                        top: -7,
+                        right: -8,
+                        child: Container(
+                          constraints: const BoxConstraints(
+                            minWidth: 18,
+                            minHeight: 18,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          decoration: BoxDecoration(
+                            color: esquema.error,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            entrevistas.length > 9 ? '9+' : '${entrevistas.length}',
+                            style: TextStyle(
+                              color: esquema.onError,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
                 style: IconButton.styleFrom(
                   backgroundColor: esquema.surfaceContainerHighest,
                 ),

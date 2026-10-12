@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../services/habilidades.service.dart';
 import '../services/ofertas.services.dart';
+import 'candidatos_oferta.dart';
 import 'publicar_oferta.dart';
 
 class MisOfertasPage extends StatefulWidget {
-  const MisOfertasPage({super.key, this.service});
+  const MisOfertasPage({super.key, this.service, this.usuarioId});
 
   final OfertasService? service;
+  final String? usuarioId;
 
   @override
   State<MisOfertasPage> createState() => _MisOfertasPageState();
@@ -131,6 +133,21 @@ class _MisOfertasPageState extends State<MisOfertasPage> {
                           icon: const Icon(Icons.tune),
                           label: Text(faltanRequisitos ? 'Añadir requisitos' : 'Editar requisitos'),
                         ),
+                        if (widget.usuarioId != null) ...[
+                          const SizedBox(height: 6),
+                          OutlinedButton.icon(
+                            onPressed: () => Navigator.of(context).push<void>(
+                              MaterialPageRoute(
+                                builder: (_) => CandidatosOfertaPage(
+                                  oferta: oferta,
+                                  reclutadorId: widget.usuarioId!,
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(Icons.people_alt_outlined),
+                            label: const Text('Ver candidatos y chatear'),
+                          ),
+                        ],
                       ],
                     ),
                   ),

@@ -83,6 +83,52 @@ export async function listarPostulacionesDeOferta(
     }
 }
 
+export async function obtenerCvDePostulacion(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+
+        res.status(200).json(
+            await postulacionService.obtenerCvDePostulacion(
+                usuario.id,
+                leerParam(req, 'id'),
+            ),
+        )
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function descargarCvDePostulacion(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+        const { titulo, archivo } =
+            await postulacionService.descargarCvDePostulacion(
+                usuario.id,
+                leerParam(req, 'id'),
+            )
+        const nombreSeguro =
+            titulo.normalize('NFKD').replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80) ||
+            'CV'
+
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="${nombreSeguro}.pdf"`,
+        )
+        res.status(200).send(archivo)
+    } catch (err) {
+        next(err)
+    }
+}
+
 export async function actualizarEstado(
     req: Request,
     res: Response,

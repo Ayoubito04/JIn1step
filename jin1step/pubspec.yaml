@@ -39,6 +39,9 @@ dependencies:
   google_fonts: ^8.2.1
   file_picker: ^13.1.0
   url_launcher: ^6.3.2
+  firebase_core: ^4.15.0
+  firebase_messaging: ^16.7.0
+  video_player: ^2.11.1
 
 dev_dependencies:
   flutter_test:
@@ -61,6 +64,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/images/Logo J1S.png
+    - assets/videos/Animación de carga app.mp4
 
   # To add assets to your application, add an assets section, like this:
   # assets:

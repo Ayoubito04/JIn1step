@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../core/app_theme.dart';
 import '../services/auth.service.dart';
+import '../widgets/brand_logo.dart';
 
 // home.dart NO se importa: se navega con pushNamedAndRemoveUntil('/home', ...),
 // la ruta con nombre que ya registra main.dart, sin referenciar la clase Home.
@@ -203,30 +204,7 @@ class _LoginScreenState extends State<LoginScreen>
           // Círculo de contenedor tonal (primaryContainer) en vez del
           // círculo translúcido sobre el degradado: es el mismo patrón que
           // el icono de perfil de una cuenta de Google.
-          child: Container(
-            width: 84,
-            height: 84,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [esquema.primary, const Color(0xFF8277F2)],
-              ),
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: esquema.primary.withValues(alpha: .25),
-                  blurRadius: 28,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Icon(
-              Icons.work_outline,
-              size: 42,
-              color: Colors.white,
-            ),
-          ),
+          child: const BrandLogo(size: 88),
         ),
         const SizedBox(height: 16),
         _aparecer(

@@ -1,4 +1,6 @@
 //Ahora nos tocará definir la lógica de este schema,que es la parte de negocio
+import path from 'path'
+import fs from 'fs/promises'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma'
 import { HttpError } from '../../lib/http-error'
@@ -7,6 +9,8 @@ import type {
     ActualizarPostulacionesInput,
     CrearPostulacionesInput,
 } from './postulacion.schema'
+
+const CARPETA_SUBIDAS = path.join(__dirname, '../../../uploads')
 
 //Lo que se enseña de cada postulación. Como en ofertas, es un select explícito
 //para no devolver la fila entera de Usuario (passwordHash incluido).
@@ -161,6 +165,53 @@ export async function listarPostulacionesDeOferta(
 }
 
 //Solo el reclutador dueño de la oferta puede mover el estado.
+export async function obtenerCvDePostulacion(
+    reclutadorId: string,
+    postulacionId: string,
+) {
+    const postulacion = await prisma.postulacion.findUnique({
+        where: { id: postulacionId },
+        select: {
+            cv: { select: { id: true, titulo: true, contenidoTexto: true } },
+            oferta: { select: { reclutadorId: true } },
+        },
+    })
+
+    if (!postulacion || postulacion.oferta.reclutadorId !== reclutadorId) {
+        throw new HttpError(404, 'Candidatura no encontrada')
+    }
+
+    return postulacion.cv
+}
+
+export async function descargarCvDePostulacion(
+    reclutadorId: string,
+    postulacionId: string,
+) {
+    const postulacion = await prisma.postulacion.findUnique({
+        where: { id: postulacionId },
+        select: {
+            cv: { select: { titulo: true, urlArchivo: true } },
+            oferta: { select: { reclutadorId: true } },
+        },
+    })
+
+    if (!postulacion || postulacion.oferta.reclutadorId !== reclutadorId) {
+        throw new HttpError(404, 'Candidatura no encontrada')
+    }
+
+    const nombreArchivo = path.basename(postulacion.cv.urlArchivo)
+    try {
+        const archivo = await fs.readFile(path.join(CARPETA_SUBIDAS, nombreArchivo))
+        return { titulo: postulacion.cv.titulo, archivo }
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            throw new HttpError(404, 'El archivo del CV ya no está disponible')
+        }
+        throw error
+    }
+}
+
 export async function actualizarEstadoPostulacion(
     reclutadorId: string,
     postulacionId: string,

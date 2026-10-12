@@ -214,6 +214,16 @@ export const IniciarCheckout = async (
     idUsuario: string,
     datos: IniciarSuscripcionInput,
 ) => {
+    // Este flujo crea Checkout y procesa webhooks de Stripe. Los valores de
+    // Google Play y App Store están reservados para futuras integraciones y
+    // no deben acabar guardados como si se hubieran cobrado en Stripe.
+    if (datos.proveedorPago !== 'STRIPE') {
+        throw new HttpError(
+            501,
+            `El proveedor ${datos.proveedorPago} todavía no está integrado`,
+        )
+    }
+
     const suscripcion = await CrearSuscripcion(idUsuario, datos)
 
     const usuario = await prisma.usuario.findUniqueOrThrow({

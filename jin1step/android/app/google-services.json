@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "18921073793",
+    "project_id": "jin1step",
+    "storage_bucket": "jin1step.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:18921073793:android:06ed0093d907f65231b180",
+        "android_client_info": {
+          "package_name": "com.example.jin1step"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAHFVkHTjwqBj2jlOwCZ--PPnFM5kQXBSs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
