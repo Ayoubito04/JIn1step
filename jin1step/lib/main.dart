@@ -31,6 +31,9 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       // Todo el tema (colores, tarjetas, botones) vive en core/app_theme.dart
       theme: construirTemaApp(),
+      builder: (context, child) => AnimatedLinesBackground(
+        child: child ?? const SizedBox.shrink(),
+      ),
       // Cada pantalla a la que se navegue con pushNamed tiene que estar aquí.
       // Si falta, la app falla con "Could not find a generator for route".
       //

@@ -1,6 +1,9 @@
 import type { NextFunction, Request, Response } from 'express'
 import { HttpError } from '../../lib/http-error'
-import { ejecutarAutopilot } from './postulaciones_autopilot.service'
+import {
+    ejecutarAutopilot,
+    previsualizarAutopilot,
+} from './postulaciones_autopilot.service'
 
 function usuarioAutenticado(req: Request) {
     if (!req.usuario) {
@@ -17,6 +20,19 @@ export async function ejecutar(
     try {
         const usuario = usuarioAutenticado(req)
         res.status(200).json(await ejecutarAutopilot(usuario.id))
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function previsualizar(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+        res.status(200).json(await previsualizarAutopilot(usuario.id))
     } catch (err) {
         next(err)
     }

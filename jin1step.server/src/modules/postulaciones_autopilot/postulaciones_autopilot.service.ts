@@ -126,6 +126,87 @@ export async function ejecutarAutopilot(usuarioId: string) {
     }
 }
 
+// Previsualización local: usa las mismas reglas de compatibilidad que la
+// ejecución real, pero no escribe en la base de datos ni exige suscripción.
+// Solo se monta en entornos distintos de producción.
+export async function previsualizarAutopilot(usuarioId: string) {
+    const preferencias = await obtenerPreferencias(usuarioId)
+    if (!preferencias.cvId) {
+        throw new HttpError(409, 'Asigna un CV para simular el autopiloto')
+    }
+
+    const cv = await prisma.cv.findFirst({
+        where: { id: preferencias.cvId, usuarioId },
+        select: { id: true },
+    })
+    if (!cv) {
+        throw new HttpError(404, 'El CV configurado ya no existe')
+    }
+
+    const yaHechasHoy = await postulacionesIaDeHoy(cv.id)
+    const restante = preferencias.maxPorDia - yaHechasHoy
+    if (restante <= 0) {
+        return {
+            ofertas: [],
+            restantesHoy: 0,
+            motivo: 'limite_diario_alcanzado' as const,
+        }
+    }
+
+    const candidatas = await prisma.oferta.findMany({
+        where: {
+            estado: 'ABIERTA',
+            postulaciones: { none: { cv: { usuarioId } } },
+        },
+        select: {
+            id: true,
+            titulo: true,
+            modalidad: true,
+            empresa: { select: { nombre: true, ubicacion: true } },
+        },
+    })
+
+    if (candidatas.length === 0) {
+        return {
+            ofertas: [],
+            restantesHoy: restante,
+            motivo: 'sin_ofertas_disponibles' as const,
+        }
+    }
+
+    const puntuadas = await Promise.all(
+        candidatas.map(async (oferta) => ({
+            oferta,
+            match: await calcularMatch(cv.id, oferta.id),
+        })),
+    )
+
+    const elegibles = puntuadas
+        .filter(
+            ({ match }) =>
+                !match.sinRequisitos &&
+                match.puntuacion >= preferencias.scoreMinimo,
+        )
+        .sort((a, b) => b.match.puntuacion - a.match.puntuacion)
+        .slice(0, restante)
+
+    return {
+        ofertas: elegibles.map(({ oferta, match }) => ({
+            ofertaId: oferta.id,
+            titulo: oferta.titulo,
+            empresa: oferta.empresa.nombre,
+            ubicacion: oferta.empresa.ubicacion,
+            modalidad: oferta.modalidad,
+            score: match.puntuacion,
+        })),
+        restantesHoy: restante,
+        motivo:
+            elegibles.length === 0
+                ? ('sin_ofertas_sobre_score_minimo' as const)
+                : null,
+    }
+}
+
 // Trabajo diario del servidor. Ejecuta únicamente preferencias activas con un
 // CV asignado; ejecutarAutopilot vuelve a validar suscripción, CV y límites.
 // El recorrido secuencial limita la carga sobre la base de datos.

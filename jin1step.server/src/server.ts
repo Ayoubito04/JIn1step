@@ -23,6 +23,10 @@ async function procesarAutopilotsDelDia() {
 
 App.listen(env.port, () => {
   console.log(`Servidor escuchando en http://localhost:${env.port}/api/health`);
-  void procesarAutopilotsDelDia()
-  setInterval(() => void procesarAutopilotsDelDia(), UN_DIA_MS)
+  // No disparar postulaciones reales automáticamente mientras se desarrolla
+  // o prueba localmente; el modo de simulación está disponible en desarrollo.
+  if (env.isProduction) {
+    void procesarAutopilotsDelDia()
+    setInterval(() => void procesarAutopilotsDelDia(), UN_DIA_MS)
+  }
 });

@@ -12,7 +12,7 @@ class BrandLogo extends StatelessWidget {
       image: true,
       label: 'Logo de Jin1step',
       child: Image.asset(
-        'assets/images/Logo J1S.png',
+        'assets/images/logo_j1s_transparente.png',
         width: size,
         height: size,
         fit: BoxFit.contain,

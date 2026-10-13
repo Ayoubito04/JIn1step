@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -18,12 +19,15 @@ class _AutopilotPageState extends State<AutopilotPage> {
   bool _cargando = true;
   bool _guardando = false;
   bool _ejecutando = false;
+  bool _simulando = false;
   bool _activo = false;
   bool _suscripcionActiva = false;
+  bool _preferenciasGuardadas = false;
   String? _cvId;
   double _scoreMinimo = 70;
   int _maxPorDia = 5;
   List<Map<String, dynamic>> _cvs = [];
+  List<Map<String, dynamic>> _ofertasSimuladas = [];
   String? _error;
   String? _mensaje;
 
@@ -51,6 +55,7 @@ class _AutopilotPageState extends State<AutopilotPage> {
         _suscripcionActiva = resultados[2] != null;
         _activo = preferencias['activo'] as bool? ?? false;
         _cvId = preferencias['cvId'] as String?;
+        _preferenciasGuardadas = _cvId != null;
         _scoreMinimo = ((preferencias['scoreMinimo'] as num?)?.toDouble() ?? 70)
             .clamp(0, 100)
             .toDouble();
@@ -72,6 +77,7 @@ class _AutopilotPageState extends State<AutopilotPage> {
     if (cv != null && mounted) {
       setState(() {
         _cvId = cv['id'] as String?;
+        _preferenciasGuardadas = false;
         if (!_cvs.any((item) => item['id'] == _cvId)) _cvs = [..._cvs, cv];
       });
     }
@@ -89,7 +95,12 @@ class _AutopilotPageState extends State<AutopilotPage> {
         'scoreMinimo': _scoreMinimo.round(),
         'maxPorDia': _maxPorDia,
       });
-      if (mounted) setState(() => _mensaje = 'Preferencias guardadas.');
+      if (mounted) {
+        setState(() {
+          _preferenciasGuardadas = true;
+          _mensaje = 'Preferencias guardadas.';
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -120,7 +131,12 @@ class _AutopilotPageState extends State<AutopilotPage> {
         'scoreMinimo': _scoreMinimo.round(),
         'maxPorDia': _maxPorDia,
       });
-      if (mounted) setState(() => _activo = activar);
+      if (mounted) {
+        setState(() {
+          _activo = activar;
+          _preferenciasGuardadas = true;
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -170,6 +186,36 @@ class _AutopilotPageState extends State<AutopilotPage> {
       if (mounted) setState(() => _error = error.toString());
     } finally {
       if (mounted) setState(() => _ejecutando = false);
+    }
+  }
+
+  Future<void> _simularAhora() async {
+    if (!_preferenciasGuardadas) {
+      setState(() => _error = 'Guarda la configuración antes de simular.');
+      return;
+    }
+    setState(() {
+      _simulando = true;
+      _error = null;
+      _mensaje = null;
+      _ofertasSimuladas = [];
+    });
+    try {
+      final resultado = await _service.previsualizarAutopilot();
+      final ofertas = (resultado['ofertas'] as List? ?? [])
+          .cast<Map<String, dynamic>>();
+      final motivo = resultado['motivo'] as String?;
+      if (!mounted) return;
+      setState(() {
+        _ofertasSimuladas = ofertas;
+        _mensaje = ofertas.isNotEmpty
+            ? 'Simulación completada: ${ofertas.length} ${ofertas.length == 1 ? 'oferta compatible' : 'ofertas compatibles'}. No se ha enviado ninguna candidatura.'
+            : _textoMotivo(motivo);
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _simulando = false);
     }
   }
 
@@ -300,7 +346,10 @@ class _AutopilotPageState extends State<AutopilotPage> {
                     max: 100,
                     divisions: 20,
                     label: '${_scoreMinimo.round()}%',
-                    onChanged: (value) => setState(() => _scoreMinimo = value),
+                    onChanged: (value) => setState(() {
+                      _scoreMinimo = value;
+                      _preferenciasGuardadas = false;
+                    }),
                   ),
                   const SizedBox(height: 4),
                   Row(
@@ -317,8 +366,10 @@ class _AutopilotPageState extends State<AutopilotPage> {
                           for (var i = 1; i <= 20; i++)
                             DropdownMenuItem(value: i, child: Text('$i')),
                         ],
-                        onChanged: (value) =>
-                            setState(() => _maxPorDia = value ?? _maxPorDia),
+                        onChanged: (value) => setState(() {
+                          _maxPorDia = value ?? _maxPorDia;
+                          _preferenciasGuardadas = false;
+                        }),
                       ),
                     ],
                   ),
@@ -331,6 +382,67 @@ class _AutopilotPageState extends State<AutopilotPage> {
             onPressed: _guardando || _cvId == null ? null : _guardar,
             child: Text(_guardando ? 'Guardando…' : 'Guardar configuración'),
           ),
+          if (kDebugMode) ...[
+            const SizedBox(height: 12),
+            Card(
+              color: esquema.secondaryContainer.withValues(alpha: .62),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Prueba segura',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Simula la selección con tu CV y tus filtros. No necesita suscripción y no crea candidaturas.',
+                      style: TextStyle(color: esquema.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: _simulando || _cvId == null
+                          ? null
+                          : _simularAhora,
+                      icon: _simulando
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.science_outlined),
+                      label: Text(
+                        _simulando ? 'Simulando…' : 'Simular sin postular',
+                      ),
+                    ),
+                    for (final oferta in _ofertasSimuladas)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          Icons.work_outline,
+                          color: esquema.primary,
+                        ),
+                        title: Text(oferta['titulo'] as String? ?? 'Oferta'),
+                        subtitle: Text(
+                          [
+                            oferta['empresa'] as String? ?? '',
+                            oferta['ubicacion'] as String? ?? '',
+                          ].where((parte) => parte.isNotEmpty).join(' · '),
+                        ),
+                        trailing: Text(
+                          '${((oferta['score'] as num?) ?? 0).round()}%',
+                          style: TextStyle(
+                            color: esquema.primary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           if (_activo && _suscripcionActiva) ...[
             const SizedBox(height: 10),
             OutlinedButton.icon(

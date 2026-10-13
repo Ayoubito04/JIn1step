@@ -74,7 +74,7 @@ class _OfertasState extends State<Ofertas> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text(
           'Ofertas de empleo',

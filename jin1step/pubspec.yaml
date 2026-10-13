@@ -66,7 +66,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/images/Logo J1S.png
+    - assets/images/logo_j1s_transparente.png
     - assets/videos/Animación de carga app.mp4
 
   # To add assets to your application, add an assets section, like this:

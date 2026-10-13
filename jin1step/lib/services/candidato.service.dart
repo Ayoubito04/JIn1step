@@ -100,6 +100,17 @@ class CandidatoService {
     }
   }
 
+  Future<Map<String, dynamic>> previsualizarAutopilot() async {
+    try {
+      final respuesta = await ApiClient.dio.post(
+        '/postulaciones-autopilot/previsualizar',
+      );
+      return respuesta.data as Map<String, dynamic>;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
   Future<String> iniciarSuscripcion() async {
     try {
       final respuesta = await ApiClient.dio.post(

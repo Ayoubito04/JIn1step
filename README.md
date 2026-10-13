@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="jin1step/assets/images/logo_j1s_transparente.png" alt="Logo de JIn1Step" width="180">
+</p>
+
 # JIn1Step
 
 **Buscar trabajo en un solo paso.** JIn1Step es una plataforma de empleo que conecta a
