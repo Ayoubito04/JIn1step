@@ -3,6 +3,15 @@ import 'package:dio/dio.dart';
 import '../core/api_client.dart';
 
 class CandidatoService {
+  Future<List<Map<String, dynamic>>> listarHabilidadesCv(String cvId) async {
+    try {
+      final respuesta = await ApiClient.dio.get('/habilidades/cv/$cvId');
+      return (respuesta.data as List).cast<Map<String, dynamic>>();
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
   Future<List<Map<String, dynamic>>> listarCvs() async {
     try {
       final respuesta = await ApiClient.dio.get('/cv');

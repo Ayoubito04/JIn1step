@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
 
 import '../widgets/brand_logo.dart';
 
@@ -13,43 +12,14 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  late final VideoPlayerController _video;
   Timer? _timeout;
-  bool _listo = false;
   bool _navegando = false;
 
   @override
   void initState() {
     super.initState();
-    _video = VideoPlayerController.asset(
-      'assets/videos/Animación de carga app.mp4',
-    )..addListener(_alCambiarVideo);
-    unawaited(_iniciarVideo());
-    // Si una plataforma tarda en abrir el vídeo, la app sigue siendo usable.
-    _timeout = Timer(const Duration(seconds: 12), _continuar);
-  }
-
-  Future<void> _iniciarVideo() async {
-    try {
-      await _video.initialize().timeout(const Duration(seconds: 8));
-      if (!mounted) return;
-      await _video.setVolume(0);
-      await _video.setLooping(false);
-      setState(() => _listo = true);
-      await _video.play();
-    } catch (_) {
-      // El logo de respaldo y el botón Omitir siguen disponibles si el
-      // navegador o el dispositivo no puede reproducir el MP4.
-      if (mounted) setState(() => _listo = false);
-    }
-  }
-
-  void _alCambiarVideo() {
-    if (!_video.value.isInitialized) return;
-    if (_video.value.position >= _video.value.duration &&
-        !_video.value.isPlaying) {
-      _continuar();
-    }
+    // La nueva animación SVG dura un ciclo de cinco segundos.
+    _timeout = Timer(const Duration(seconds: 5), _continuar);
   }
 
   void _continuar() {
@@ -62,47 +32,47 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void dispose() {
     _timeout?.cancel();
-    _video
-      ..removeListener(_alCambiarVideo)
-      ..dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071A33),
+      backgroundColor: const Color(0xFFF0F6FD),
       body: Stack(
         children: [
           const Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment(0, -0.15),
-                  radius: 1.1,
-                  colors: [Color(0xFF123D68), Color(0xFF071A33)],
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFFEAF5FF), Color(0xFFF8FBFF), Colors.white],
                 ),
               ),
             ),
           ),
           Center(
-            child: _listo && _video.value.isInitialized
-                ? LayoutBuilder(
-                    builder: (context, constraints) {
-                      final videoSize = _video.value.size;
-                      return ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: constraints.maxWidth,
-                          maxHeight: constraints.maxHeight,
-                        ),
-                        child: AspectRatio(
-                          aspectRatio: videoSize.width / videoSize.height,
-                          child: VideoPlayer(_video),
-                        ),
-                      );
-                    },
-                  )
-                : const BrandLogo(size: 112),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const AnimatedBrandLogo(size: 230),
+                const SizedBox(height: 16),
+                const Text(
+                  'JIn1Step',
+                  style: TextStyle(
+                    color: Color(0xFF526A88),
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Buscar trabajo en un solo paso',
+                  style: TextStyle(color: Color(0xFF7F94AF), fontSize: 14),
+                ),
+              ],
+            ),
           ),
           Positioned(
             left: 24,
@@ -117,7 +87,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     'Tu siguiente paso empieza aquí',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Color(0xFF526A88),
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -126,7 +96,9 @@ class _SplashScreenState extends State<SplashScreen> {
                   TextButton(
                     onPressed: _continuar,
                     style: TextButton.styleFrom(
-                      foregroundColor: Colors.white.withValues(alpha: 0.78),
+                      foregroundColor: const Color(
+                        0xFF526A88,
+                      ).withValues(alpha: 0.78),
                     ),
                     child: const Text('Omitir'),
                   ),

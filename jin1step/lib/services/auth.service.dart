@@ -62,6 +62,34 @@ class AuthService {
       throw ApiClient.traducirError(error);
     }
   }
+
+  /// Valida el ID token de Google en el backend y abre la sesión normal de
+  /// Jin1step. El backend es quien verifica la firma y decide si crea o vincula
+  /// la cuenta; nunca confiamos en el email enviado por el cliente.
+  Future<Map<String, dynamic>> loginConGoogle(
+    String idToken, {
+    Rol rol = Rol.candidato,
+  }) async {
+    try {
+      final respuesta = await ApiClient.dio.post(
+        '/auth/login/google',
+        data: {'idToken': idToken, 'rol': rol.valorApi},
+      );
+
+      final datos = respuesta.data as Map<String, dynamic>;
+      await ApiClient.storage.write(
+        key: ApiClient.claveAccessToken,
+        value: datos['accessToken'] as String,
+      );
+      await ApiClient.storage.write(
+        key: ApiClient.claveRefreshToken,
+        value: datos['refreshToken'] as String,
+      );
+      return datos['usuario'] as Map<String, dynamic>;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
   //Antes del registroi,vamos a definir el rol del usuario
 
   /// Cierra la sesión borrando los tokens del dispositivo.

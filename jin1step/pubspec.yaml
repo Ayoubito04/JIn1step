@@ -41,6 +41,8 @@ dependencies:
   url_launcher: ^6.3.2
   firebase_core: ^4.15.0
   firebase_messaging: ^16.7.0
+  google_sign_in: ^7.2.0
+  google_sign_in_web: ^1.1.3
   video_player: ^2.11.1
 
 dev_dependencies:
@@ -67,7 +69,7 @@ flutter:
 
   assets:
     - assets/images/logo_j1s_transparente.png
-    - assets/videos/Animación de carga app.mp4
+    - assets/videos/logo-jin1step-animado.svg
 
   # To add assets to your application, add an assets section, like this:
   # assets:

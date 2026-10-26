@@ -11,6 +11,7 @@ class MisPostulacionesPage extends StatefulWidget {
 
 class _MisPostulacionesPageState extends State<MisPostulacionesPage> {
   final _service = CandidatoService();
+  String _filtro = 'Todas';
   late Future<List<Map<String, dynamic>>> _postulaciones = _service
       .listarPostulaciones();
 
@@ -75,120 +76,155 @@ class _MisPostulacionesPageState extends State<MisPostulacionesPage> {
               ),
             );
           }
-          return RefreshIndicator(
-            onRefresh: () async {
-              final actualizadas = _service.listarPostulaciones();
-              setState(() => _postulaciones = actualizadas);
-              await actualizadas;
-            },
-            child: ListView.builder(
-              padding: const EdgeInsets.all(18),
-              itemCount: candidaturas.length,
-              itemBuilder: (context, index) {
-                final postulacion = candidaturas[index];
-                final oferta =
-                    postulacion['oferta'] as Map<String, dynamic>? ?? {};
-                final empresa =
-                    oferta['empresa'] as Map<String, dynamic>? ?? {};
-                final requisitos = oferta['requisitos'] as List? ?? const [];
-                final score = (postulacion['matchScore'] as num?)?.round();
-                final porAutopilot = postulacion['postuladoPorIa'] == true;
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 46,
-                              height: 46,
-                              decoration: BoxDecoration(
-                                color: esquema.primary.withValues(alpha: .1),
-                                borderRadius: BorderRadius.circular(15),
-                              ),
-                              child: Icon(
-                                Icons.work_outline,
-                                color: esquema.primary,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
+          final filtradas = candidaturas.where((item) {
+            if (_filtro == 'Manuales') return item['postuladoPorIa'] != true;
+            if (_filtro == 'Por IA') return item['postuladoPorIa'] == true;
+            return true;
+          }).toList();
+          return Column(
+            children: [
+              SizedBox(
+                height: 52,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 5,
+                  ),
+                  children: [
+                    for (final filtro in ['Todas', 'Manuales', 'Por IA'])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(filtro),
+                          selected: _filtro == filtro,
+                          onSelected: (_) => setState(() => _filtro = filtro),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    final actualizadas = _service.listarPostulaciones();
+                    setState(() => _postulaciones = actualizadas);
+                    await actualizadas;
+                  },
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+                    itemCount: filtradas.length,
+                    itemBuilder: (context, index) {
+                      final postulacion = filtradas[index];
+                      final oferta =
+                          postulacion['oferta'] as Map<String, dynamic>? ?? {};
+                      final empresa =
+                          oferta['empresa'] as Map<String, dynamic>? ?? {};
+                      final score = (postulacion['matchScore'] as num?)
+                          ?.round();
+                      final porAutopilot =
+                          postulacion['postuladoPorIa'] == true;
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    oferta['titulo'] as String? ?? 'Oferta',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
+                                  Container(
+                                    width: 46,
+                                    height: 46,
+                                    decoration: BoxDecoration(
+                                      color: esquema.primary.withValues(
+                                        alpha: .1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(15),
+                                    ),
+                                    child: Icon(
+                                      Icons.work_outline,
+                                      color: esquema.primary,
                                     ),
                                   ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    empresa['nombre'] as String? ?? 'Empresa',
-                                    style: TextStyle(
-                                      color: esquema.onSurfaceVariant,
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          oferta['titulo'] as String? ??
+                                              'Oferta',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          empresa['nombre'] as String? ??
+                                              'Empresa',
+                                          style: TextStyle(
+                                            color: esquema.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
+                                  if (score != null)
+                                    Text(
+                                      '$score%',
+                                      style: TextStyle(
+                                        color: esquema.primary,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
                                 ],
                               ),
-                            ),
-                            if (requisitos.isEmpty)
-                              Text(
-                                'Sin requisitos',
-                                style: TextStyle(
-                                  color: esquema.onSurfaceVariant,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              )
-                            else if (score != null)
-                              Text(
-                                '$score%',
-                                style: TextStyle(
-                                  color: esquema.primary,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                              const SizedBox(height: 14),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _etiqueta(
+                                    context,
+                                    _estado(postulacion['estado'] as String?),
+                                    Icons.flag_outlined,
+                                  ),
+                                  _etiqueta(
+                                    context,
+                                    porAutopilot ? 'Autopiloto' : 'Manual',
+                                    porAutopilot
+                                        ? Icons.auto_awesome
+                                        : Icons.person_outline,
+                                  ),
+                                  if (postulacion['cv'] is Map<String, dynamic>)
+                                    _etiqueta(
+                                      context,
+                                      (postulacion['cv']
+                                                  as Map<
+                                                    String,
+                                                    dynamic
+                                                  >)['titulo']
+                                              as String? ??
+                                          'CV',
+                                      Icons.description_outlined,
+                                    ),
+                                ],
                               ),
-                          ],
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 14),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _etiqueta(
-                              context,
-                              _estado(postulacion['estado'] as String?),
-                              Icons.flag_outlined,
-                            ),
-                            _etiqueta(
-                              context,
-                              porAutopilot ? 'Autopiloto' : 'Manual',
-                              porAutopilot
-                                  ? Icons.auto_awesome
-                                  : Icons.person_outline,
-                            ),
-                            if (postulacion['cv'] is Map<String, dynamic>)
-                              _etiqueta(
-                                context,
-                                (postulacion['cv']
-                                            as Map<String, dynamic>)['titulo']
-                                        as String? ??
-                                    'CV',
-                                Icons.description_outlined,
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
+                ),
+              ),
+            ],
           );
         },
       ),

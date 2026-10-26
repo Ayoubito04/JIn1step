@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/candidato.service.dart';
 import '../services/ofertas.services.dart';
 import 'oferta_detalle.dart';
 
@@ -16,16 +17,86 @@ class _OfertasState extends State<Ofertas> {
   late final OfertasService _ofertasService =
       widget.ofertaService ?? OfertasService();
 
-  late final Future<List<Map<String, dynamic>>> _futuroOfertas =
-      _ofertasService.getAllOfertas();
+  late final Future<List<Map<String, dynamic>>> _futuroOfertas = _ofertasService
+      .getAllOfertas();
+  final _candidatoService = CandidatoService();
+  Set<String> _habilidadesCv = {};
+  bool _cvCargado = false;
 
   final _busquedaCtrl = TextEditingController();
   String _busqueda = '';
-  String? _ubicacionFiltro;
-
-  // null = "Todas". Los otros tres son exactamente los valores del enum
+  // null = "Todas". Los otros valores son exactamente los del enum
   // Modalidad del backend, así el filtro nunca desincroniza con la API.
   String? _modalidadFiltro;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarHabilidadesCv();
+  }
+
+  Future<void> _cargarHabilidadesCv() async {
+    try {
+      final cvs = await _candidatoService.listarCvs();
+      if (cvs.isEmpty) {
+        if (mounted) setState(() => _cvCargado = true);
+        return;
+      }
+      final habilidades = await _candidatoService.listarHabilidadesCv(
+        cvs.first['id'] as String,
+      );
+      final nombres = habilidades
+          .map(
+            (item) => (item['habilidad'] as Map<String, dynamic>?)?['nombre'],
+          )
+          .whereType<String>()
+          .map(_normalizarHabilidad)
+          .toSet();
+      if (mounted)
+        setState(() {
+          _habilidadesCv = nombres;
+          _cvCargado = true;
+        });
+    } catch (_) {
+      if (mounted) setState(() => _cvCargado = true);
+    }
+  }
+
+  String _normalizarHabilidad(String nombre) =>
+      nombre.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  ({
+    int score,
+    int obligatoriasCubiertas,
+    int obligatoriasTotal,
+    int deseablesCubiertas,
+    int deseablesTotal,
+  })
+  _calcularMatch(Map<String, dynamic> oferta) {
+    final requisitos = (oferta['requisitos'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final obligatorias = requisitos.where((r) => r['obligatorio'] != false);
+    final deseables = requisitos.where((r) => r['obligatorio'] == false);
+    int cubiertas(Iterable<Map<String, dynamic>> lista) => lista.where((r) {
+      final nombre =
+          (r['habilidad'] as Map<String, dynamic>?)?['nombre'] as String?;
+      return nombre != null &&
+          _habilidadesCv.contains(_normalizarHabilidad(nombre));
+    }).length;
+    final totalO = obligatorias.length, totalD = deseables.length;
+    final cubiertasO = cubiertas(obligatorias),
+        cubiertasD = cubiertas(deseables);
+    final ratioO = totalO == 0 ? 1.0 : cubiertasO / totalO;
+    final ratioD = totalD == 0 ? 1.0 : cubiertasD / totalD;
+    return (
+      score: totalO + totalD == 0 ? 0 : (ratioO * 70 + ratioD * 30).round(),
+      obligatoriasCubiertas: cubiertasO,
+      obligatoriasTotal: totalO,
+      deseablesCubiertas: cubiertasD,
+      deseablesTotal: totalD,
+    );
+  }
 
   @override
   void dispose() {
@@ -45,26 +116,23 @@ class _OfertasState extends State<Ofertas> {
       }
 
       final empresa = oferta['empresa'] as Map<String, dynamic>?;
-      final ubicacion = (empresa?['ubicacion'] as String? ?? '').trim();
-      if (_ubicacionFiltro != null && ubicacion != _ubicacionFiltro) {
-        return false;
-      }
-
       if (texto.isEmpty) return true;
 
       final titulo = (oferta['titulo'] as String? ?? '').toLowerCase();
       final nombreEmpresa = (empresa?['nombre'] as String? ?? '').toLowerCase();
+      final ubicacion = (empresa?['ubicacion'] as String? ?? '').toLowerCase();
       final requisitos = oferta['requisitos'] as List? ?? const [];
-      final habilidades = requisitos
-          .whereType<Map<String, dynamic>>()
-          .map((requisito) =>
-              ((requisito['habilidad'] as Map<String, dynamic>?)?['nombre']
-                      as String? ??
-                  '')
-              .toLowerCase());
+      final habilidades = requisitos.whereType<Map<String, dynamic>>().map(
+        (requisito) =>
+            ((requisito['habilidad'] as Map<String, dynamic>?)?['nombre']
+                        as String? ??
+                    '')
+                .toLowerCase(),
+      );
 
       return titulo.contains(texto) ||
           nombreEmpresa.contains(texto) ||
+          ubicacion.contains(texto) ||
           habilidades.any((habilidad) => habilidad.contains(texto));
     }).toList();
   }
@@ -77,7 +145,7 @@ class _OfertasState extends State<Ofertas> {
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text(
-          'Ofertas de empleo',
+          'Ofertas para ti',
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
         centerTitle: false,
@@ -128,22 +196,9 @@ class _OfertasState extends State<Ofertas> {
                   );
                 }
 
-                final ubicaciones = todas
-                    .map((oferta) =>
-                        (oferta['empresa'] as Map<String, dynamic>?)?['ubicacion']
-                            as String?)
-                    .whereType<String>()
-                    .map((ubicacion) => ubicacion.trim())
-                    .where((ubicacion) => ubicacion.isNotEmpty)
-                    .toSet()
-                    .toList()
-                  ..sort();
-
                 return Column(
                   children: [
                     _filtrosModalidad(theme),
-                    const SizedBox(height: 8),
-                    _filtroUbicacion(theme, ubicaciones),
                     Expanded(
                       child: ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -169,7 +224,7 @@ class _OfertasState extends State<Ofertas> {
         controller: _busquedaCtrl,
         onChanged: (valor) => setState(() => _busqueda = valor),
         decoration: InputDecoration(
-          hintText: 'Buscar por puesto, empresa o habilidad',
+          hintText: 'Buscar por puesto o habilidad',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _busqueda.isEmpty
               ? null
@@ -183,37 +238,10 @@ class _OfertasState extends State<Ofertas> {
           filled: true,
           fillColor: Colors.white,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFE7E3F2)),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _filtroUbicacion(ThemeData theme, List<String> ubicaciones) {
-    final valor = ubicaciones.contains(_ubicacionFiltro) ? _ubicacionFiltro : null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: DropdownButtonFormField<String?>(
-        initialValue: valor,
-        isExpanded: true,
-        decoration: InputDecoration(
-          labelText: 'Ubicación de la empresa',
-          prefixIcon: const Icon(Icons.location_on_outlined),
-          filled: true,
-          fillColor: theme.colorScheme.surfaceContainerLow,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
-          ),
-        ),
-        items: [
-          const DropdownMenuItem<String?>(value: null, child: Text('Todas las ubicaciones')),
-          for (final ubicacion in ubicaciones)
-            DropdownMenuItem<String?>(value: ubicacion, child: Text(ubicacion)),
-        ],
-        onChanged: (value) => setState(() => _ubicacionFiltro = value),
       ),
     );
   }
@@ -224,7 +252,6 @@ class _OfertasState extends State<Ofertas> {
       ('Todas', null),
       ('Remoto', 'REMOTO'),
       ('Híbrido', 'HIBRIDO'),
-      ('Presencial', 'PRESENCIAL'),
     ];
 
     return SizedBox(
@@ -241,6 +268,11 @@ class _OfertasState extends State<Ofertas> {
           return ChoiceChip(
             label: Text(etiqueta),
             selected: seleccionado,
+            visualDensity: VisualDensity.compact,
+            labelStyle: TextStyle(
+              fontSize: 11,
+              color: seleccionado ? Colors.white : theme.colorScheme.onSurface,
+            ),
             onSelected: (_) => setState(() => _modalidadFiltro = valor),
           );
         },
@@ -263,10 +295,18 @@ class _OfertasState extends State<Ofertas> {
           children: [
             Icon(icono, size: 48, color: color),
             const SizedBox(height: 16),
-            Text(titulo, style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+            Text(
+              titulo,
+              style: theme.textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
             if (subtitulo != null) ...[
               const SizedBox(height: 8),
-              Text(subtitulo, style: theme.textTheme.bodyMedium, textAlign: TextAlign.center),
+              Text(
+                subtitulo,
+                style: theme.textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
             ],
           ],
         ),
@@ -281,70 +321,86 @@ class _OfertasState extends State<Ofertas> {
     final empresa = oferta['empresa'] as Map<String, dynamic>?;
     final titulo = oferta['titulo'] as String? ?? 'Sin título';
     final nombreEmpresa = empresa?['nombre'] as String? ?? 'Empresa';
-    final ubicacion = empresa?['ubicacion'] as String?;
     final modalidad = oferta['modalidad'] as String?;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => OfertaDetalle(oferta: oferta)),
+            MaterialPageRoute(
+              builder: (context) => OfertaDetalle(oferta: oferta),
+            ),
           );
         },
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 13),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Container(
-                    width: 44,
-                    height: 44,
+                    width: 40,
+                    height: 40,
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(14),
+                      color: const Color(0xFFF0EFF8),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      Icons.business_outlined,
-                      color: theme.colorScheme.onPrimaryContainer,
+                      Icons.business_center_outlined,
+                      color: theme.colorScheme.primary,
+                      size: 18,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      nombreEmpresa,
-                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          titulo,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$nombreEmpresa${modalidad == null ? '' : ' · ${_etiquetaModalidad(modalidad)}'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  Icon(Icons.arrow_forward_ios, size: 16, color: theme.colorScheme.outline),
+                  const SizedBox(width: 8),
+                  Text(
+                    _cvCargado && _habilidadesCv.isNotEmpty
+                        ? '${_calcularMatch(oferta).score}%'
+                        : '—',
+                    style: TextStyle(
+                      color: _colorMatch(_calcularMatch(oferta).score),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                titulo,
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (ubicacion != null)
-                    Chip(
-                      avatar: const Icon(Icons.location_on_outlined, size: 18),
-                      label: Text(ubicacion),
-                    ),
-                  if (modalidad != null)
-                    Chip(
-                      avatar: const Icon(Icons.work_outline, size: 18),
-                      label: Text(_etiquetaModalidad(modalidad)),
-                    ),
-                ],
+                spacing: 7,
+                runSpacing: 6,
+                children: _chipsRequisitos(theme, oferta),
               ),
             ],
           ),
@@ -353,10 +409,51 @@ class _OfertasState extends State<Ofertas> {
     );
   }
 
+  List<Widget> _chipsRequisitos(ThemeData theme, Map<String, dynamic> oferta) {
+    final match = _calcularMatch(oferta);
+    final requisitos = (oferta['requisitos'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>();
+    final faltante = requisitos.cast<Map<String, dynamic>>().where((r) {
+      final nombre =
+          (r['habilidad'] as Map<String, dynamic>?)?['nombre'] as String?;
+      return nombre != null &&
+          !_habilidadesCv.contains(_normalizarHabilidad(nombre));
+    }).firstOrNull;
+    final primero = faltante == null
+        ? '${match.obligatoriasCubiertas}/${match.obligatoriasTotal} obligatorias'
+        : 'Falta: ${(faltante['habilidad'] as Map<String, dynamic>?)?['nombre'] ?? 'habilidad'}';
+    return [
+      _chip(primero, theme),
+      _chip(
+        '${match.deseablesCubiertas}/${match.deseablesTotal} deseables',
+        theme,
+      ),
+    ];
+  }
+
+  Widget _chip(String texto, ThemeData theme) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: const Color(0xFFD7D0F4)),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      texto,
+      style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface),
+    ),
+  );
+
+  Color _colorMatch(int score) => score >= 80
+      ? const Color(0xFF07884D)
+      : score >= 60
+      ? const Color(0xFFAA7200)
+      : const Color(0xFF77738D);
+
   String _etiquetaModalidad(String valor) => switch (valor) {
-        'REMOTO' => 'Remoto',
-        'HIBRIDO' => 'Híbrido',
-        'PRESENCIAL' => 'Presencial',
-        _ => valor,
-      };
+    'REMOTO' => 'Remoto',
+    'HIBRIDO' => 'Híbrido',
+    'PRESENCIAL' => 'Presencial',
+    _ => valor,
+  };
 }

@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 import '../core/app_theme.dart';
 import '../services/auth.service.dart';
 import '../services/candidato.service.dart';
+import '../services/chat.service.dart';
 import '../services/ofertas.services.dart';
 import 'autopilot.dart';
 import 'mis_cvs.dart';
@@ -109,7 +110,9 @@ class _HomeState extends State<Home> {
           .toSet();
       final hayNuevaEntrevista =
           !_primeraCargaEntrevistas &&
-          entrevistas.any((postulacion) => !idsAnteriores.contains(postulacion['id']));
+          entrevistas.any(
+            (postulacion) => !idsAnteriores.contains(postulacion['id']),
+          );
 
       if (!mounted) return;
       setState(() {
@@ -120,7 +123,9 @@ class _HomeState extends State<Home> {
 
       if (hayNuevaEntrevista) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Te han seleccionado para una entrevista.')),
+          const SnackBar(
+            content: Text('Te han seleccionado para una entrevista.'),
+          ),
         );
       }
     } catch (_) {
@@ -174,7 +179,11 @@ class _HomeState extends State<Home> {
                     child: Center(
                       child: Column(
                         children: [
-                          Icon(Icons.notifications_none, size: 42, color: esquema.primary),
+                          Icon(
+                            Icons.notifications_none,
+                            size: 42,
+                            color: esquema.primary,
+                          ),
                           const SizedBox(height: 10),
                           const Text('Todavía no tienes entrevistas.'),
                         ],
@@ -187,7 +196,11 @@ class _HomeState extends State<Home> {
                       postulacion: postulacion,
                       onTap: () {
                         Navigator.of(context).pop();
-                        _irAPestana(2);
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const MisPostulacionesPage(),
+                          ),
+                        );
                       },
                     ),
                 ],
@@ -213,7 +226,7 @@ class _HomeState extends State<Home> {
 
   void _irAPestana(int indice) => setState(() {
     _indice = indice;
-    if (indice == 2) _versionMensajes++;
+    if (indice == (_rol == Rol.candidato ? 3 : 2)) _versionMensajes++;
   });
 
   @override
@@ -231,53 +244,85 @@ class _HomeState extends State<Home> {
     // dependen del rol: candidato y reclutador no ven la misma segunda
     // pestaña ni el mismo contenido en Inicio.
     final secciones = <_Seccion>[
-      _Seccion(
-        etiqueta: 'Inicio',
-        icono: Icons.home_outlined,
-        iconoActivo: Icons.home,
-        pagina: _InicioTab(
-          usuario: usuario,
-          esCandidato: esCandidato,
-          onIrAPestana: _irAPestana,
-          entrevistas: _entrevistas,
-          onMostrarNotificaciones: _mostrarNotificaciones,
-        ),
-      ),
-      esCandidato
-          // Sin "const": Ofertas recibe widget.ofertasService, que no es
-          // una constante de compilación.
-          ? _Seccion(
-              etiqueta: 'Ofertas',
-              icono: Icons.work_outline,
-              iconoActivo: Icons.work,
-              // Ofertas administra su propio Scaffold y AppBar.
-              pagina: Ofertas(ofertaService: widget.ofertasService),
-            )
-          : _Seccion(
-              etiqueta: 'Mis ofertas',
-              icono: Icons.business_center_outlined,
-              iconoActivo: Icons.business_center,
-              pagina: MisOfertasPage(usuarioId: usuario['id'] as String),
+      if (esCandidato) ...[
+        _Seccion(
+          etiqueta: 'Inicio',
+          icono: Icons.home_outlined,
+          iconoActivo: Icons.home,
+          pagina: _InicioCandidatoTab(
+            usuario: usuario,
+            onIrAPestana: _irAPestana,
+            onVerCandidaturas: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MisPostulacionesPage()),
             ),
-      _Seccion(
-        etiqueta: 'Mensajes',
-        icono: Icons.chat_bubble_outline,
-        iconoActivo: Icons.chat_bubble,
-        pagina: MensajesPage(
-          key: ValueKey(_versionMensajes),
-          usuarioId: usuario['id'] as String,
+          ),
         ),
-      ),
-      _Seccion(
-        etiqueta: 'Perfil',
-        icono: Icons.person_outline,
-        iconoActivo: Icons.person,
-        pagina: _PerfilTab(
-          usuario: usuario,
-          rol: _rol!,
-          onCerrarSesion: _cerrarSesion,
+        _Seccion(
+          etiqueta: 'Ofertas',
+          icono: Icons.work_outline,
+          iconoActivo: Icons.work,
+          pagina: Ofertas(ofertaService: widget.ofertasService),
         ),
-      ),
+        _Seccion(
+          etiqueta: 'Autopiloto',
+          icono: Icons.auto_awesome_outlined,
+          iconoActivo: Icons.auto_awesome,
+          pagina: const AutopilotPage(),
+        ),
+        _Seccion(
+          etiqueta: 'Chat',
+          icono: Icons.chat_bubble_outline,
+          iconoActivo: Icons.chat_bubble,
+          pagina: MensajesPage(
+            key: ValueKey(_versionMensajes),
+            usuarioId: usuario['id'] as String,
+          ),
+        ),
+        _Seccion(
+          etiqueta: 'Mi CV',
+          icono: Icons.person_outline,
+          iconoActivo: Icons.person,
+          pagina: const MisCvsPage(seleccionable: false),
+        ),
+      ] else ...[
+        _Seccion(
+          etiqueta: 'Inicio',
+          icono: Icons.home_outlined,
+          iconoActivo: Icons.home,
+          pagina: _InicioTab(
+            usuario: usuario,
+            esCandidato: false,
+            onIrAPestana: _irAPestana,
+            entrevistas: _entrevistas,
+            onMostrarNotificaciones: _mostrarNotificaciones,
+          ),
+        ),
+        _Seccion(
+          etiqueta: 'Mis ofertas',
+          icono: Icons.business_center_outlined,
+          iconoActivo: Icons.business_center,
+          pagina: MisOfertasPage(usuarioId: usuario['id'] as String),
+        ),
+        _Seccion(
+          etiqueta: 'Mensajes',
+          icono: Icons.chat_bubble_outline,
+          iconoActivo: Icons.chat_bubble,
+          pagina: MensajesPage(
+            key: ValueKey(_versionMensajes),
+            usuarioId: usuario['id'] as String,
+          ),
+        ),
+        _Seccion(
+          etiqueta: 'Perfil',
+          icono: Icons.person_outline,
+          iconoActivo: Icons.person,
+          pagina: _PerfilTab(
+            usuario: usuario,
+            rol: _rol!,
+            onCerrarSesion: _cerrarSesion,
+          ),
+        ),
+      ],
     ];
 
     return Scaffold(
@@ -292,6 +337,7 @@ class _HomeState extends State<Home> {
       // El estilo de la barra (colores, tipografía) sale de
       // navigationBarTheme en core/app_theme.dart.
       bottomNavigationBar: NavigationBar(
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         selectedIndex: _indice,
         onDestinationSelected: _irAPestana,
         destinations: [
@@ -384,6 +430,565 @@ class _Encabezado extends StatelessWidget {
   }
 }
 
+/// Resumen del candidato, construido con los datos del backend y con la
+/// composición visual de la referencia PNG de Inicio.
+class _InicioCandidatoTab extends StatefulWidget {
+  const _InicioCandidatoTab({
+    required this.usuario,
+    required this.onIrAPestana,
+    required this.onVerCandidaturas,
+  });
+
+  final Map<String, dynamic> usuario;
+  final ValueChanged<int> onIrAPestana;
+  final VoidCallback onVerCandidaturas;
+
+  @override
+  State<_InicioCandidatoTab> createState() => _InicioCandidatoTabState();
+}
+
+class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
+  final _candidato = CandidatoService();
+  final _ofertas = OfertasService();
+  final _chat = ChatService();
+  bool _cargando = true;
+  String? _error;
+  List<Map<String, dynamic>> _postulaciones = [];
+  List<Map<String, dynamic>> _ofertasDisponibles = [];
+  List<Map<String, dynamic>> _conversaciones = [];
+  Map<String, dynamic> _preferencias = {};
+  Set<String> _habilidades = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
+  }
+
+  Future<void> _cargar() async {
+    try {
+      final datos = await Future.wait<Object?>([
+        _candidato.listarPostulaciones(),
+        _candidato.obtenerPreferenciasAutopilot(),
+        _ofertas.getAllOfertas(),
+        _chat.listarConversaciones(),
+        _candidato.listarCvs(),
+      ]);
+      final cvs = datos[4] as List<Map<String, dynamic>>;
+      Set<String> habilidades = {};
+      if (cvs.isNotEmpty && cvs.first['id'] is String) {
+        final lista = await _candidato.listarHabilidadesCv(
+          cvs.first['id'] as String,
+        );
+        habilidades = lista
+            .map(
+              (item) => (item['habilidad'] as Map<String, dynamic>?)?['nombre'],
+            )
+            .whereType<String>()
+            .map((nombre) => nombre.trim().toLowerCase())
+            .toSet();
+      }
+      if (!mounted) return;
+      setState(() {
+        _postulaciones = datos[0] as List<Map<String, dynamic>>;
+        _preferencias = datos[1] as Map<String, dynamic>;
+        _ofertasDisponibles = datos[2] as List<Map<String, dynamic>>;
+        _conversaciones = datos[3] as List<Map<String, dynamic>>;
+        _habilidades = habilidades;
+        _cargando = false;
+      });
+    } catch (error) {
+      if (mounted)
+        setState(() {
+          _error = error.toString();
+          _cargando = false;
+        });
+    }
+  }
+
+  bool _esHoy(Object? fecha) {
+    if (fecha is! String) return false;
+    final date = DateTime.tryParse(fecha)?.toLocal();
+    final now = DateTime.now();
+    return date != null &&
+        date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
+  }
+
+  int? _match(Map<String, dynamic> oferta) {
+    if (_habilidades.isEmpty) return null;
+    final requisitos = (oferta['requisitos'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>();
+    final obligatorias = requisitos
+        .where((r) => r['obligatorio'] != false)
+        .toList();
+    final deseables = requisitos
+        .where((r) => r['obligatorio'] == false)
+        .toList();
+    if (obligatorias.isEmpty && deseables.isEmpty) return null;
+    int cuenta(List<Map<String, dynamic>> items) => items.where((r) {
+      final nombre =
+          (r['habilidad'] as Map<String, dynamic>?)?['nombre'] as String?;
+      return nombre != null &&
+          _habilidades.contains(nombre.trim().toLowerCase());
+    }).length;
+    final ratioO = obligatorias.isEmpty
+        ? 1.0
+        : cuenta(obligatorias) / obligatorias.length;
+    final ratioD = deseables.isEmpty
+        ? 1.0
+        : cuenta(deseables) / deseables.length;
+    return (ratioO * 70 + ratioD * 30).round();
+  }
+
+  List<({Map<String, dynamic> oferta, int score})> get _mejores {
+    final items = <({Map<String, dynamic> oferta, int score})>[];
+    for (final oferta in _ofertasDisponibles) {
+      final score = _match(oferta);
+      if (score != null) items.add((oferta: oferta, score: score));
+    }
+    items.sort((a, b) => b.score.compareTo(a.score));
+    return items.take(2).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final esquema = Theme.of(context).colorScheme;
+    if (_cargando) return const Center(child: CircularProgressIndicator());
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'No se pudo cargar tu resumen',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: esquema.onSurfaceVariant),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _cargando = true;
+                    _error = null;
+                  });
+                  _cargar();
+                },
+                child: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final entrevistas = _postulaciones
+        .where((p) => p['estado'] == 'ENTREVISTA')
+        .length;
+    final scores = _postulaciones
+        .map((p) => p['matchScore'])
+        .whereType<num>()
+        .toList();
+    final media = scores.isEmpty
+        ? null
+        : (scores.fold<double>(0, (sum, score) => sum + score) / scores.length)
+              .round();
+    final hoy = _postulaciones
+        .where(
+          (p) => p['postuladoPorIa'] == true && _esHoy(p['fechaPostulacion']),
+        )
+        .length;
+    final limite = (_preferencias['maxPorDia'] as num?)?.toInt() ?? 5;
+    final minimo = (_preferencias['scoreMinimo'] as num?)?.toInt() ?? 70;
+    final activo = _preferencias['activo'] == true;
+    final matches = _mejores;
+    final inicial = (widget.usuario['nombre'] as String? ?? 'U').trim();
+
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: [0, .38, 1],
+          colors: [Color(0xFFE9E4FA), Color(0xFFF6F4FD), AppColors.white],
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Hola de nuevo',
+                        style: TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 13,
+                        ),
+                      ),
+                      Text(
+                        'Tu resumen',
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: AppColors.primary,
+                  child: Text(
+                    inicial.isEmpty
+                        ? 'U'
+                        : inicial.substring(0, 1).toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.fromLTRB(18, 15, 18, 14),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                    colors: [AppColors.primaryDark, AppColors.primaryLight],
+                ),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          activo ? 'Autopiloto activo' : 'Autopiloto inactivo',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .2),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          'Mín. ' + minimo.toString() + '%',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    hoy.toString() +
+                        ' de ' +
+                        limite.toString() +
+                        ' postulaciones enviadas hoy',
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                  ),
+                  const SizedBox(height: 9),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: limite == 0 ? 0 : (hoy / limite).clamp(0.0, 1.0),
+                      minHeight: 7,
+                      backgroundColor: Colors.white.withValues(alpha: .28),
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _metrica(
+                    context,
+                    _postulaciones.length.toString(),
+                    'Candidaturas',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _metrica(
+                    context,
+                    entrevistas.toString(),
+                    'Entrevistas',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _metrica(
+                    context,
+                    media == null ? '—' : media.toString() + '%',
+                    'Match medio',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Mejores matches',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => widget.onIrAPestana(1),
+                  child: const Text('Ver todas'),
+                ),
+              ],
+            ),
+            if (matches.isEmpty)
+              _panelVacio('Sube un CV para ver qué ofertas encajan contigo.')
+            else
+              for (final match in matches)
+                _tarjetaMatch(context, match.oferta, match.score),
+            const SizedBox(height: 6),
+            Text(
+              'Actividad reciente',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            _actividad(context),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: widget.onVerCandidaturas,
+              child: const Text('Ver mis candidaturas'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metrica(BuildContext context, String valor, String titulo) =>
+      Container(
+        height: 72,
+        padding: const EdgeInsets.fromLTRB(11, 10, 8, 8),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE7E1F8)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              valor,
+              style: const TextStyle(
+                color: AppColors.primaryDark,
+                fontSize: 23,
+                fontWeight: FontWeight.w800,
+                height: 1,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              titulo,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.muted, fontSize: 11),
+            ),
+          ],
+        ),
+      );
+
+  Widget _tarjetaMatch(
+    BuildContext context,
+    Map<String, dynamic> oferta,
+    int score,
+  ) {
+    final empresa = oferta['empresa'] as Map<String, dynamic>? ?? {};
+    final modalidad = switch (oferta['modalidad']) {
+      'REMOTO' => 'Remoto',
+      'HIBRIDO' => 'Híbrido',
+      'PRESENCIAL' => 'Presencial',
+      _ => '',
+    };
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => widget.onIrAPestana(1),
+        child: Padding(
+          padding: const EdgeInsets.all(13),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.iconTile,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.work_outline,
+                  color: AppColors.iconInk,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      oferta['titulo'] as String? ?? 'Oferta',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      (empresa['nombre'] as String? ?? 'Empresa') +
+                          (modalidad.isEmpty ? '' : ' · ' + modalidad),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                score.toString() + '%',
+                style: TextStyle(
+                  color: score >= 80
+                      ? AppColors.matchHigh
+                      : AppColors.matchMid,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _actividad(BuildContext context) {
+    if (_conversaciones.isEmpty) {
+      return _panelVacio(
+        'Todavía no hay actividad. Tus mensajes y cambios aparecerán aquí.',
+      );
+    }
+    final chat = _conversaciones.first;
+    final persona = chat['interlocutor'] as Map<String, dynamic>? ?? {};
+    final ultimo = chat['ultimoMensaje'] as Map<String, dynamic>? ?? {};
+    final nombre = (persona['nombre'] as String? ?? 'Tu reclutador').trim();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE7E1F8)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nombre + ' te ha escrito',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  ultimo['contenido'] as String? ??
+                      'Tienes una conversación nueva',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _hora(ultimo['createdAt']),
+            style: const TextStyle(color: AppColors.muted, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _hora(Object? fecha) {
+    if (fecha is! String) return '';
+    final date = DateTime.tryParse(fecha)?.toLocal();
+    if (date == null) return '';
+    return date.hour.toString().padLeft(2, '0') +
+        ':' +
+        date.minute.toString().padLeft(2, '0');
+  }
+
+  Widget _panelVacio(String texto) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: const Color(0xFFE7E1F8)),
+    ),
+    child: Text(
+      texto,
+      style: const TextStyle(color: AppColors.muted, fontSize: 13),
+    ),
+  );
+}
+
 // ─── Inicio ─────────────────────────────────────────────────────────────
 
 /// Resumen al entrar. Candidatos y reclutadores ven tarjetas distintas.
@@ -464,7 +1069,9 @@ class _InicioTab extends StatelessWidget {
                           ),
                           alignment: Alignment.center,
                           child: Text(
-                            entrevistas.length > 9 ? '9+' : '${entrevistas.length}',
+                            entrevistas.length > 9
+                                ? '9+'
+                                : '${entrevistas.length}',
                             style: TextStyle(
                               color: esquema.onError,
                               fontSize: 10,
@@ -495,7 +1102,7 @@ class _InicioTab extends StatelessWidget {
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [esquema.primary, const Color(0xFF8177F4)],
+                colors: [AppColors.primary, AppColors.primaryLight],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -553,17 +1160,17 @@ class _InicioTab extends StatelessWidget {
                         QuickAction(
                           icono: Icons.smart_toy_outlined,
                           etiqueta: 'Autopiloto',
-                          onTap: () => onIrAPestana(3),
+                          onTap: () => onIrAPestana(2),
                         ),
                         QuickAction(
                           icono: Icons.chat_bubble_outline,
                           etiqueta: 'Mensajes',
-                          onTap: () => onIrAPestana(2),
+                          onTap: () => onIrAPestana(3),
                         ),
                         QuickAction(
                           icono: Icons.person_outline,
                           etiqueta: 'Perfil',
-                          onTap: () => onIrAPestana(3),
+                          onTap: () => onIrAPestana(4),
                         ),
                       ]
                     : [
@@ -600,6 +1207,13 @@ class _InicioTab extends StatelessWidget {
                   icono: esCandidato ? Icons.send_outlined : Icons.work_outline,
                   titulo: esCandidato ? 'Postulaciones' : 'Ofertas abiertas',
                   valor: '0',
+                  onTap: esCandidato
+                      ? () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const MisPostulacionesPage(),
+                          ),
+                        )
+                      : null,
                 ),
               ),
               const SizedBox(width: 12),
@@ -625,30 +1239,35 @@ class _InicioTab extends StatelessWidget {
     required IconData icono,
     required String titulo,
     required String valor,
+    VoidCallback? onTap,
   }) {
     final esquema = Theme.of(context).colorScheme;
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icono, color: esquema.primary),
-            const SizedBox(height: 8),
-            Text(
-              valor,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: esquema.onSurface,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icono, color: esquema.primary),
+              const SizedBox(height: 8),
+              Text(
+                valor,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: esquema.onSurface,
+                ),
               ),
-            ),
-            Text(
-              titulo,
-              style: TextStyle(fontSize: 12, color: esquema.onSurfaceVariant),
-            ),
-          ],
+              Text(
+                titulo,
+                style: TextStyle(fontSize: 12, color: esquema.onSurfaceVariant),
+              ),
+            ],
+          ),
         ),
       ),
     );

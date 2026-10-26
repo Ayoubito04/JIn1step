@@ -105,11 +105,9 @@ class _RegisterPageState extends State<RegisterPage>
   /// patrón que en login.dart: pushNamedAndRemoveUntil borra el registro del
   /// historial para que "atrás" no vuelva a un formulario ya enviado.
   void _entrarHome(Map<String, dynamic> usuario) {
-    Navigator.of(context).pushNamedAndRemoveUntil(
-      '/home',
-      (route) => false,
-      arguments: usuario,
-    );
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil('/home', (route) => false, arguments: usuario);
   }
 
   /// Entrada escalonada: mismo efecto que en el login.
@@ -146,57 +144,58 @@ class _RegisterPageState extends State<RegisterPage>
       body: AuthBackdrop(
         child: SafeArea(
           child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                children: [
-                  _aparecer(
-                    inicio: 0.0,
-                    child: const BrandLogo(size: 88),
-                  ),
-                  const SizedBox(height: 12),
-                  _aparecer(
-                    inicio: 0.08,
-                    child: Text(
-                      'Crea tu cuenta',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: esquema.onSurface,
-                          ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  _aparecer(
-                    inicio: 0.13,
-                    child: Text(
-                      'Empieza a encontrar tu próximo empleo',
-                      style: TextStyle(fontSize: 15, color: esquema.onSurfaceVariant),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  _construirTarjeta(),
-                  const SizedBox(height: 12),
-                  _aparecer(
-                    inicio: 0.55,
-                    child: TextButton(
-                      // pop y no pushNamed('/login'): se llegó aquí desde el
-                      // login, así que basta con volver atrás. Con push se
-                      // apilarían pantallas de login infinitas.
-                      onPressed: _cargando
-                          ? null
-                          : () => Navigator.pop(context),
-                      child: const Text(
-                        '¿Ya tienes cuenta? Inicia sesión',
-                        style: TextStyle(fontWeight: FontWeight.w600),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Column(
+                  children: [
+                    _aparecer(inicio: 0.0, child: const BrandLogo(size: 88)),
+                    const SizedBox(height: 12),
+                    _aparecer(
+                      inicio: 0.08,
+                      child: Text(
+                        'Crea tu cuenta',
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: esquema.onSurface,
+                            ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    _aparecer(
+                      inicio: 0.13,
+                      child: Text(
+                        'Sube tu CV una vez y deja que el match haga el resto',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: esquema.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _construirTarjeta(),
+                    const SizedBox(height: 12),
+                    _aparecer(
+                      inicio: 0.55,
+                      child: TextButton(
+                        // pop y no pushNamed('/login'): se llegó aquí desde el
+                        // login, así que basta con volver atrás. Con push se
+                        // apilarían pantallas de login infinitas.
+                        onPressed: _cargando
+                            ? null
+                            : () => Navigator.pop(context),
+                        child: const Text(
+                          '¿Ya tienes cuenta? Inicia sesión',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
           ),
         ),
       ),
@@ -277,7 +276,7 @@ class _RegisterPageState extends State<RegisterPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Me registro como', style: Theme.of(context).textTheme.labelLarge),
+        Text('Soy', style: Theme.of(context).textTheme.labelLarge),
         const SizedBox(height: 8),
         // Se construye a partir de Rol.values: si mañana se añade un rol al
         // enum, aparece aquí sin tocar esta pantalla.
@@ -340,7 +339,7 @@ class _RegisterPageState extends State<RegisterPage>
       textInputAction: TextInputAction.next,
       autofillHints: const [AutofillHints.email],
       decoration: const InputDecoration(
-        labelText: 'Email',
+        labelText: 'Correo electrónico',
         prefixIcon: Icon(Icons.email_outlined),
       ),
       validator: (valor) {

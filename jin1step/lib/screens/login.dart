@@ -1,11 +1,19 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../core/api_client.dart';
 import '../core/app_theme.dart';
+import '../core/google_auth_config.dart';
 import '../services/auth.service.dart';
 import '../widgets/brand_logo.dart';
+import '../widgets/design_system.dart';
+import '../widgets/google_sign_in_web_button_stub.dart'
+    if (dart.library.html) '../widgets/google_sign_in_web_button.dart'
+    as google_web;
 
 // home.dart NO se importa: se navega con pushNamedAndRemoveUntil('/home', ...),
 // la ruta con nombre que ya registra main.dart, sin referenciar la clase Home.
@@ -46,14 +54,69 @@ class _LoginScreenState extends State<LoginScreen>
   );
 
   bool _cargando = false; //Definimos la pantalla de carga
-  bool _verPassword =
-      false; //Esta variable nos va a servir para ver o ocultar la contraseña
+  bool _googlePreparado = false;
+  String? _errorGoogle;
+  StreamSubscription<GoogleSignInAuthenticationEvent>? _googleEvents;
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _entrada.forward();
+    unawaited(_prepararGoogle());
+  }
+
+  Future<void> _prepararGoogle() async {
+    if (kIsWeb && googleWebClientId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _errorGoogle =
+              'Falta configurar el ID de cliente web de Google para esta versión web.';
+        });
+      }
+      return;
+    }
+
+    try {
+      await _googleSignIn
+          .initialize(
+            clientId: kIsWeb ? googleWebClientId : null,
+            serverClientId: !kIsWeb && googleWebClientId.isNotEmpty
+                ? googleWebClientId
+                : null,
+          )
+          .timeout(const Duration(seconds: 12));
+      if (kIsWeb) {
+        _googleEvents = _googleSignIn.authenticationEvents.listen(
+          (evento) {
+            if (evento is GoogleSignInAuthenticationEventSignIn) {
+              unawaited(
+                _iniciarSesionConGoogleToken(
+                  evento.user.authentication.idToken,
+                ),
+              );
+            }
+          },
+          onError: (Object error) {
+            if (mounted) {
+              setState(
+                () => _errorGoogle =
+                    'No se pudo completar el inicio de sesión con Google.',
+              );
+            }
+          },
+        );
+      }
+      if (mounted) setState(() => _googlePreparado = true);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _errorGoogle =
+              'Google está tardando demasiado o no pudo inicializarse. Comprueba la conexión y la configuración OAuth.',
+        );
+      }
+    }
   }
 
   @override
@@ -63,9 +126,73 @@ class _LoginScreenState extends State<LoginScreen>
     // pantalla desaparezca.
     _entrada.dispose();
     _sacudida.dispose();
+    unawaited(_googleEvents?.cancel());
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _iniciarSesionGoogle() async {
+    if (_cargando || !_googlePreparado || kIsWeb) return;
+
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+
+    try {
+      final cuenta = await _googleSignIn.authenticate();
+      final token = cuenta.authentication.idToken;
+      if (token == null || token.isEmpty) {
+        throw const ApiException(
+          'Google no devolvió un token de identidad. Revisa la configuración OAuth.',
+        );
+      }
+      final usuario = await _auth.loginConGoogle(token);
+      if (mounted) _entrarHome(usuario);
+    } on GoogleSignInException catch (e) {
+      if (!mounted || e.code == GoogleSignInExceptionCode.canceled) return;
+      setState(
+        () => _error =
+            'No se pudo iniciar sesión con Google. Revisa la huella SHA-1 y el cliente OAuth.',
+      );
+      _sacudida.forward(from: 0);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.mensaje);
+      _sacudida.forward(from: 0);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'No se pudo iniciar sesión con Google.');
+      _sacudida.forward(from: 0);
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  Future<void> _iniciarSesionConGoogleToken(String? token) async {
+    if (!mounted || _cargando) return;
+    if (token == null || token.isEmpty) {
+      setState(() => _error = 'Google no devolvió un token de identidad.');
+      return;
+    }
+
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+    try {
+      final usuario = await _auth.loginConGoogle(token);
+      if (mounted) _entrarHome(usuario);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.mensaje);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'No se pudo iniciar sesión con Google.');
+      }
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
   }
 
   //Evitamos sobrecargar la memoria
@@ -151,36 +278,27 @@ class _LoginScreenState extends State<LoginScreen>
       // el notch del móvil.
       body: AuthBackdrop(
         child: SafeArea(
-          child: Center(
-          // Con scroll, al abrir el teclado el formulario se desplaza en
-          // vez de desbordar con la franja amarilla y negra.
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              // En web o tablet, que el formulario no ocupe toda la pantalla.
-              constraints: const BoxConstraints(maxWidth: 470),
-              child: Column(
-                children: [
-                  _construirCabecera(context),
-                  const SizedBox(height: 32),
-                  _construirTarjeta(),
-                  const SizedBox(height: 16),
-                  _aparecer(
-                    inicio: 0.55,
-                    child: TextButton(
-                      onPressed: _cargando
-                          ? null
-                          : () => Navigator.pushNamed(context, '/register'),
-                      child: const Text(
-                        '¿No tienes cuenta? Regístrate',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-                ],
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.authHorizontal,
+              AppSpacing.authTop,
+              AppSpacing.authHorizontal,
+              24,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 390),
+                child: Column(
+                  children: [
+                    _construirCabecera(context),
+                    const SizedBox(height: AppSpacing.authBlockGap),
+                    _construirTarjeta(),
+                    const SizedBox(height: 8),
+                    _aparecer(inicio: 0.55, child: _crearCuentaLink()),
+                  ],
+                ),
               ),
             ),
-          ),
           ),
         ),
       ),
@@ -188,8 +306,6 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _construirCabecera(BuildContext context) {
-    final esquema = Theme.of(context).colorScheme;
-
     // El logo entra con un pequeño rebote (elasticOut), el resto con un
     // deslizamiento suave. Es el primer elemento que aparece.
     final escalaLogo = CurvedAnimation(
@@ -204,16 +320,20 @@ class _LoginScreenState extends State<LoginScreen>
           // Círculo de contenedor tonal (primaryContainer) en vez del
           // círculo translúcido sobre el degradado: es el mismo patrón que
           // el icono de perfil de una cuenta de Google.
-          child: const BrandLogo(size: 88),
+          child: const BrandLogo(size: AppDimensions.authLogo),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         _aparecer(
           inicio: 0.1,
           child: Text(
-            'Jin1step',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: esquema.onSurface,
+            'Bienvenido de nuevo',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontSize: AppFontSizes.authHeading,
+              height: 1,
+              letterSpacing: -0.4,
+              fontWeight: FontWeight.w800,
+              color: AppColors.ink,
             ),
           ),
         ),
@@ -221,8 +341,12 @@ class _LoginScreenState extends State<LoginScreen>
         _aparecer(
           inicio: 0.15,
           child: Text(
-            'Inicia sesión para continuar',
-            style: TextStyle(fontSize: 16, color: esquema.onSurfaceVariant),
+            'Buscar trabajo en un solo paso',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontSize: AppFontSizes.muted,
+              color: AppColors.muted,
+            ),
           ),
         ),
       ],
@@ -243,28 +367,27 @@ class _LoginScreenState extends State<LoginScreen>
           child: child,
         );
       },
-      // Card sin decoración extra: elevation, color y bordes redondeados ya
-      // salen de cardTheme (core/app_theme.dart), la superficie tonal
-      // estándar de Material 3.
       child: _aparecer(
         inicio: 0.25,
-        child: GlassPanel(
-          padding: const EdgeInsets.all(26),
-          child: Padding(
-            padding: EdgeInsets.zero,
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _aparecer(inicio: 0.35, child: _campoEmail()),
-                  const SizedBox(height: 16),
-                  _aparecer(inicio: 0.42, child: _campoPassword()),
-                  _construirError(),
-                  const SizedBox(height: 24),
-                  _aparecer(inicio: 0.5, child: _botonEntrar()),
-                ],
-              ),
+        child: JCard(
+          radius: AppRadii.authCard,
+          padding: const EdgeInsets.all(18),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _aparecer(inicio: 0.35, child: _campoEmail()),
+                const SizedBox(height: AppSpacing.authBlockGap),
+                _aparecer(inicio: 0.42, child: _campoPassword()),
+                _construirError(),
+                const SizedBox(height: AppSpacing.authBlockGap),
+                _aparecer(inicio: 0.5, child: _botonEntrar()),
+                const SizedBox(height: AppSpacing.authBlockGap),
+                _aparecer(inicio: 0.51, child: _separadorAcceso()),
+                const SizedBox(height: AppSpacing.authBlockGap),
+                _aparecer(inicio: 0.52, child: _botonGoogle()),
+              ],
             ),
           ),
         ),
@@ -272,24 +395,111 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  Widget _crearCuentaLink() => TextButton(
+    onPressed: _cargando
+        ? null
+        : () => Navigator.pushNamed(context, '/register'),
+    style: TextButton.styleFrom(
+      minimumSize: const Size(44, 44),
+      padding: EdgeInsets.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    ),
+    child: RichText(
+      text: TextSpan(
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(fontSize: 13, color: AppColors.muted),
+        children: const [
+          TextSpan(text: '¿No tienes cuenta? '),
+          TextSpan(
+            text: 'Crear cuenta',
+            style: TextStyle(
+              color: AppColors.primaryDark,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _separadorAcceso() {
+    return Row(
+      children: [
+        const Expanded(child: Divider(color: AppColors.fieldBorder)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Text(
+            'o',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppColors.muted,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        const Expanded(child: Divider(color: AppColors.fieldBorder)),
+      ],
+    );
+  }
+
+  Widget _botonGoogle() {
+    if (kIsWeb) {
+      if (googleWebClientId.isEmpty) {
+        return Text(
+          _errorGoogle ??
+              'Google estará disponible al configurar el cliente web.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        );
+      }
+      if (_errorGoogle != null) {
+        return Text(
+          _errorGoogle!,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        );
+      }
+      if (!_googlePreparado) {
+        return const SizedBox(
+          height: 44,
+          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        );
+      }
+      return Center(
+        child: SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: IgnorePointer(
+            ignoring: _cargando,
+            child: google_web.buildGoogleSignInWebButton(),
+          ),
+        ),
+      );
+    }
+
+    return SecondaryButton(
+      authStyle: true,
+      label: 'Continuar con Google',
+      leading: const _GoogleG(),
+      onPressed: _cargando || !_googlePreparado ? null : _iniciarSesionGoogle,
+    );
+  }
+
   Widget _campoEmail() {
-    return TextFormField(
+    return AppTextField(
       controller: _emailCtrl,
       enabled: !_cargando,
-      // El backend hace login con EMAIL, no con nombre de usuario.
       keyboardType: TextInputType.emailAddress,
       autocorrect: false,
       textInputAction: TextInputAction.next,
       autofillHints: const [AutofillHints.email],
-      decoration: const InputDecoration(
-        labelText: 'Email',
-        prefixIcon: Icon(Icons.email_outlined),
-      ),
+      label: 'Correo electrónico',
+      hint: 'tu@correo.com',
       validator: (valor) {
         final email = valor?.trim() ?? '';
         if (email.isEmpty) return 'Introduce tu email';
-        // Comprobación básica en el móvil para no gastar una petición en un
-        // email mal escrito. La validación de verdad la hace el backend.
         if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
           return 'Ese email no es válido';
         }
@@ -299,28 +509,15 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _campoPassword() {
-    return TextFormField(
+    return AppTextField(
       controller: _passwordCtrl,
       enabled: !_cargando,
-      // Oculta la contraseña mientras se escribe.
-      obscureText: !_verPassword,
+      obscureText: true,
       textInputAction: TextInputAction.done,
       autofillHints: const [AutofillHints.password],
-      // Pulsar "Hecho" en el teclado equivale a pulsar el botón.
-      onFieldSubmitted: (_) => _iniciarSesion(),
-      decoration: InputDecoration(
-        labelText: 'Contraseña',
-        prefixIcon: const Icon(Icons.lock_outline),
-        suffixIcon: IconButton(
-          tooltip: _verPassword ? 'Ocultar contraseña' : 'Mostrar contraseña',
-          icon: Icon(
-            _verPassword
-                ? Icons.visibility_off_outlined
-                : Icons.visibility_outlined,
-          ),
-          onPressed: () => setState(() => _verPassword = !_verPassword),
-        ),
-      ),
+      onSubmitted: (_) => _iniciarSesion(),
+      label: 'Contraseña',
+      hint: 'Tu contraseña',
       validator: (valor) =>
           (valor == null || valor.isEmpty) ? 'Introduce tu contraseña' : null,
     );
@@ -328,13 +525,14 @@ class _LoginScreenState extends State<LoginScreen>
 
   Widget _construirError() {
     final esquema = Theme.of(context).colorScheme;
+    final mensajeError = _error ?? (!kIsWeb ? _errorGoogle : null);
 
     // AnimatedSize hace que el hueco del error se abra y cierre suavemente
     // en vez de empujar el botón de golpe.
     return AnimatedSize(
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
-      child: _error == null
+      child: mensajeError == null
           ? const SizedBox(width: double.infinity)
           : Container(
               width: double.infinity,
@@ -353,7 +551,7 @@ class _LoginScreenState extends State<LoginScreen>
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _error!,
+                      mensajeError,
                       style: TextStyle(color: esquema.onErrorContainer),
                     ),
                   ),
@@ -364,34 +562,28 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _botonEntrar() {
-    return SizedBox(
-      height: 52,
-      // FilledButton y no ElevatedButton: en Material 3 es el botón de
-      // acción principal, fondo sólido sin sombra (filledButtonTheme en
-      // core/app_theme.dart ya le da el redondeo y el tamaño).
-      child: FilledButton(
-        // Deshabilitado mientras carga: evita que un doble toque mande dos
-        // peticiones de login.
-        onPressed: _cargando ? null : _iniciarSesion,
-        // AnimatedSwitcher funde el texto con el indicador de carga.
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: _cargando
-              ? SizedBox(
-                  key: const ValueKey('cargando'),
-                  width: 24,
-                  height: 24,
-                  // Color explícito onPrimary: sin él, el spinner toma el
-                  // primary del tema por defecto y se vuelve invisible sobre
-                  // el fondo (también primary) del FilledButton.
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                )
-              : const Text('Iniciar sesión', key: ValueKey('texto')),
-        ),
-      ),
+    return PrimaryButton(
+      label: 'Entrar',
+      loading: _cargando,
+      onPressed: _cargando ? null : _iniciarSesion,
     );
   }
+}
+
+class _GoogleG extends StatelessWidget {
+  const _GoogleG();
+
+  @override
+  Widget build(BuildContext context) => ShaderMask(
+    blendMode: BlendMode.srcIn,
+    shaderCallback: AppGradients.googleMark.createShader,
+    child: Text(
+      'G',
+      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+        color: AppColors.white,
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+  );
 }
