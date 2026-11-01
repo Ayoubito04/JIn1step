@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/app_theme.dart';
+
 /// Marca vectorial J1S, dibujada con los mismos trazados y degradados del SVG.
 class BrandLogo extends StatelessWidget {
   const BrandLogo({super.key, this.size = 88});
@@ -14,58 +16,70 @@ class BrandLogo extends StatelessWidget {
       child: RepaintBoundary(
         child: CustomPaint(
           size: Size.square(size),
-          painter: const J1sLogoPainter(progress: .72),
+          painter: const J1sLogoPainter(),
         ),
       ),
     );
   }
 }
 
-/// Reproduce la entrada escalonada J → 1 → S del SVG nuevo en todas las
-/// plataformas Flutter, incluidas Android y Web.
-class AnimatedBrandLogo extends StatefulWidget {
-  const AnimatedBrandLogo({super.key, this.size = 220});
+/// Entrada del logo en UNA sola pasada (animation.md): la J entra desde la
+/// izquierda (8 px) sin retraso, la flecha del 1 crece desde abajo (escala
+/// 0.6→1) a los 150 ms y la S entra desde la derecha a los 300 ms. Cada pieza
+/// dura `Motion.slow` con `easeOut`. Lo dirige quien lo usa con [animation]
+/// (0→1 durante [duracion]), para que el wordmark vaya en el mismo reloj.
+class AnimatedBrandLogo extends StatelessWidget {
+  const AnimatedBrandLogo({
+    super.key,
+    required this.animation,
+    this.size = 220,
+  });
 
+  /// Duración total: la última pieza (la S) termina a los 600 ms. El wordmark
+  /// de la pantalla de inicio entra a los 600 ms y acaba a los 900 ms.
+  static const duracion = Duration(milliseconds: 900);
+
+  final Animation<double> animation;
   final double size;
 
-  @override
-  State<AnimatedBrandLogo> createState() => _AnimatedBrandLogoState();
-}
-
-class _AnimatedBrandLogoState extends State<AnimatedBrandLogo>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _motion = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 5),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _motion.dispose();
-    super.dispose();
+  /// Progreso (0..1, ya con `easeOut`) de una pieza que empieza en [retraso].
+  static double _pieza(double t, Duration retraso) {
+    final ms = t * duracion.inMilliseconds;
+    final local = ((ms - retraso.inMilliseconds) / Motion.slow.inMilliseconds)
+        .clamp(0.0, 1.0);
+    return Motion.easeOut.transform(local);
   }
 
   @override
   Widget build(BuildContext context) => Semantics(
     image: true,
-    label: 'Animación del logo de Jin1step',
+    label: 'Logo de Jin1step',
     child: RepaintBoundary(
       child: AnimatedBuilder(
-        animation: _motion,
+        animation: animation,
         builder: (context, _) => CustomPaint(
-          size: Size.square(widget.size),
-          painter: J1sLogoPainter(progress: _motion.value),
+          size: Size.square(size),
+          painter: J1sLogoPainter(
+            j: _pieza(animation.value, Duration.zero),
+            one: _pieza(animation.value, const Duration(milliseconds: 150)),
+            s: _pieza(animation.value, const Duration(milliseconds: 300)),
+          ),
         ),
       ),
     ),
   );
 }
 
-/// Trazados, degradados y tiempos basados en assets/videos/logo-jin1step-animado.svg.
+/// Trazados y degradados basados en assets/videos/logo-jin1step-animado.svg.
+/// Los degradados del logo son los únicos permitidos.
 class J1sLogoPainter extends CustomPainter {
-  const J1sLogoPainter({required this.progress});
+  /// [j], [one] y [s] son el progreso (0..1, ya suavizado) de cada pieza. Por
+  /// defecto el logo está completo.
+  const J1sLogoPainter({this.j = 1, this.one = 1, this.s = 1});
 
-  final double progress;
+  final double j;
+  final double one;
+  final double s;
 
   static final Path _j = Path()
     ..moveTo(335, 460)
@@ -122,9 +136,6 @@ class J1sLogoPainter extends CustomPainter {
     colors: [Color(0xFF1D406E), Color(0xFF101E38)],
   );
 
-  double _between(double value, double start, double end) =>
-      ((value - start) / (end - start)).clamp(0.0, 1.0);
-
   void _draw(
     Canvas canvas,
     Path path,
@@ -148,72 +159,30 @@ class J1sLogoPainter extends CustomPainter {
     canvas.scale(scale);
     canvas.translate(-635, -591);
 
-    final jOpacity = progress < .2
-        ? Curves.easeOut.transform(_between(progress, 0, .2))
-        : progress < .88
-        ? 1.0
-        : 1 - Curves.easeIn.transform(_between(progress, .88, 1));
-    final jOffset = progress < .2
-        ? -70 * (1 - Curves.easeOut.transform(_between(progress, 0, .2)))
-        : progress > .88
-        ? -20 * _between(progress, .88, 1)
-        : 0.0;
+    // Los desplazamientos están en píxeles lógicos; el lienzo está escalado.
+    final px = 1 / scale;
+
     canvas.save();
-    canvas.translate(jOffset, 0);
-    _draw(canvas, _j, _jGradient, jOpacity);
+    canvas.translate(-8 * px * (1 - j), 0);
+    _draw(canvas, _j, _jGradient, j);
     canvas.restore();
 
-    var oneOpacity = 0.0;
-    var oneScaleY = .05;
-    var oneOffsetY = 0.0;
-    if (progress < .35) {
-      final t = Curves.easeOut.transform(_between(progress, .1, .35));
-      oneOpacity = t;
-      oneScaleY = .05 + (.99 * t);
-    } else if (progress < .42) {
-      final t = _between(progress, .35, .42);
-      oneOpacity = 1;
-      oneScaleY = 1.04 - (.04 * t);
-    } else if (progress < .55) {
-      oneOpacity = 1;
-      oneScaleY = 1;
-      oneOffsetY = -14 * _between(progress, .42, .55);
-    } else if (progress < .65) {
-      oneOpacity = 1;
-      oneScaleY = 1;
-      oneOffsetY = -14 * (1 - _between(progress, .55, .65));
-    } else {
-      oneOpacity = 1;
-      oneScaleY = 1;
-    }
-    oneOpacity *= 1 - Curves.easeIn.transform(_between(progress, .88, 1));
     final oneBounds = _one.getBounds();
     canvas.save();
     canvas.translate(oneBounds.center.dx, oneBounds.bottom);
-    canvas.scale(1, oneScaleY);
+    canvas.scale(1, .6 + .4 * one);
     canvas.translate(-oneBounds.center.dx, -oneBounds.bottom);
-    canvas.translate(0, oneOffsetY);
-    _draw(canvas, _one, _oneGradient, oneOpacity);
+    _draw(canvas, _one, _oneGradient, one);
     canvas.restore();
 
-    final sOpacity = progress < .45
-        ? Curves.easeOut.transform(_between(progress, .22, .45))
-        : progress < .88
-        ? 1.0
-        : 1 - Curves.easeIn.transform(_between(progress, .88, 1));
-    final sOffset = progress < .45
-        ? 70 * (1 - Curves.easeOut.transform(_between(progress, .22, .45)))
-        : progress > .88
-        ? 20 * _between(progress, .88, 1)
-        : 0.0;
     canvas.save();
-    canvas.translate(sOffset, 0);
-    _draw(canvas, _s, _sGradient, sOpacity);
+    canvas.translate(8 * px * (1 - s), 0);
+    _draw(canvas, _s, _sGradient, s);
     canvas.restore();
     canvas.restore();
   }
 
   @override
   bool shouldRepaint(covariant J1sLogoPainter oldDelegate) =>
-      oldDelegate.progress != progress;
+      oldDelegate.j != j || oldDelegate.one != one || oldDelegate.s != s;
 }

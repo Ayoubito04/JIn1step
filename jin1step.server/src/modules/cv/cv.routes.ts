@@ -34,5 +34,6 @@ cvRouter.use(requireAuth)
 //req.body está vacío y validateBody rechazaría el título.
 cvRouter.post('/', upload.single('archivo'), validateBody(subirCvSchema), cvController.subirCv)
 cvRouter.get('/', cvController.listarMisCvs)
+cvRouter.get('/:id/archivo', cvController.verArchivoCv)
 cvRouter.get('/:id', cvController.obtenerCv)
 cvRouter.delete('/:id', cvController.borrarCv)

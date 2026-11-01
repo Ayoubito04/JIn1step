@@ -35,5 +35,13 @@ export const env={
   stripePriceAnual: process.env.STRIPE_PRICE_ANUAL ?? '',
   //A donde vuelve el usuario tras pagar o cancelar en el checkout.
   appUrl: process.env.APP_URL ?? 'http://localhost:3000',
-  
+
+  //Las claves de IA tampoco son obligatorias: sin ninguna, el autopiloto sigue
+  //funcionando con el match por habilidades (SQL) en vez de usar la IA.
+  //IA_PROVIDER fuerza 'gemini' u 'openai'; si no se pone, se usa el que tenga clave.
+  iaProvider: process.env.IA_PROVIDER ?? '',
+  geminiApiKey: process.env.GEMINI_API_KEY ?? '',
+  geminiModel: process.env.GEMINI_MODEL ?? 'gemini-3.5-flash-lite',
+  openaiApiKey: process.env.OPENAI_API_KEY ?? '',
+  openaiModel: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
 };

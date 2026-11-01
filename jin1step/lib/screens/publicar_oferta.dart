@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
-import '../core/app_theme.dart';
+import '../widgets/design_system.dart';
 import '../services/empresas.services.dart';
 import '../services/habilidades.service.dart';
 import '../services/ofertas.services.dart';

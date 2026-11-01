@@ -37,6 +37,14 @@ enum EstadoPostulacion {
   VISTA
   RECHAZADA
   ENTREVISTA
+  // El autopiloto la propone en modo revisión y espera la decisión del
+  // candidato. La empresa NO la ve hasta que se aprueba (pasa a ENVIADA).
+  PROPUESTA
+  // El candidato descartó una propuesta. Se conserva para no volver a proponerla.
+  DESCARTADA
+  // La retira el propio candidato. La fila se conserva (no se borra) para que
+  // el autopiloto no vuelva a postular a esa oferta; el reclutador no la ve.
+  RETIRADA
 }
 
 // Nivel declarado de una habilidad dentro de un CV. Era un String libre con un
@@ -93,6 +101,7 @@ model Usuario {
   mensajesEnviados             Mensaje[]
   suscripciones                Suscripcion[]
   preferenciasAutopilot        PreferenciasAutopilot?
+  ejecucionesAutopilot         EjecucionAutopilot[]
 
   @@map("usuarios")
 }
@@ -126,6 +135,10 @@ model Cv {
   urlArchivo     String   @map("url_archivo") // ruta en Supabase Storage / S3, NUNCA el binario
   contenidoTexto String?  @map("contenido_texto") // texto ya extraído del PDF/DOCX
   atsScore       Int?     @map("ats_score")
+  // Resumen estructurado del CV hecho por la IA (roles, seniority, palabras clave...).
+  // perfilIaHash es el sha256 de contenidoTexto: si cambia el texto, se regenera.
+  perfilIa       Json?    @map("perfil_ia")
+  perfilIaHash   String?  @map("perfil_ia_hash")
   createdAt      DateTime @default(now()) @map("created_at")
 
   usuario               Usuario                 @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
@@ -198,6 +211,14 @@ model Postulacion {
   ofertaId         String            @map("oferta_id")
   matchScore       Float             @map("match_score")
   postuladoPorIa   Boolean           @default(false) @map("postulado_por_ia")
+  // Valoración de la IA (solo si el autopiloto la usó): encaje 0-100, motivo
+  // breve y carta de presentación. matchScore sigue siendo el match por habilidades.
+  puntuacionIa     Float?            @map("puntuacion_ia")
+  motivoIa         String?           @map("motivo_ia")
+  cartaIa          String?           @map("carta_ia")
+  // Qué palabras clave de la oferta cubre el CV y cuáles faltan, según la IA.
+  palabrasClaveCubiertas String[]        @default([]) @map("palabras_clave_cubiertas")
+  palabrasClaveFaltantes String[]        @default([]) @map("palabras_clave_faltantes")
   estado           EstadoPostulacion @default(PENDIENTE)
   fechaPostulacion DateTime          @default(now()) @map("fecha_postulacion")
 
@@ -290,6 +311,9 @@ model PreferenciasAutopilot {
   cvId        String?   @map("cv_id") // con qué CV postula
   scoreMinimo Float     @default(70) @map("score_minimo") // no postular por debajo
   maxPorDia   Int       @default(5) @map("max_por_dia") // evita quemar su reputación
+  // true: el autopiloto PROPONE y el candidato aprueba cada envío.
+  // false: envía solo (el consentimiento de "activo" cubre ese caso).
+  revisarAntes Boolean  @default(true) @map("revisar_antes")
   activadoEn  DateTime? @map("activado_en") // registro de consentimiento
   revocadoEn  DateTime? @map("revocado_en")
 
@@ -299,4 +323,34 @@ model PreferenciasAutopilot {
   cv      Cv?     @relation(fields: [cvId], references: [id], onDelete: SetNull)
 
   @@map("preferencias_autopilot")
+}
+
+enum OrigenEjecucion {
+  MANUAL // el candidato pulsó «Ejecutar autopiloto»
+  DIARIA // la pasada diaria del servidor
+}
+
+enum ModoAutopilot {
+  REVISION
+  AUTOMATICO
+}
+
+// Historial: una fila por pasada del autopiloto que superó las comprobaciones
+// (suscripción, consentimiento, CV), aunque no encontrara nada que proponer.
+model EjecucionAutopilot {
+  id         String          @id @default(uuid())
+  usuarioId  String          @map("usuario_id")
+  fecha      DateTime        @default(now())
+  origen     OrigenEjecucion
+  modo       ModoAutopilot
+  evaluadas  Int // ofertas que se valoraron en la pasada
+  propuestas Int // creadas como PROPUESTA (modo revisión)
+  enviadas   Int // creadas como ENVIADA (modo automático)
+  via        String? // 'ia' | 'habilidades'; null si no llegó a valorar
+  motivo     String? // por qué no hubo resultados (ver el servicio)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, fecha(sort: Desc)])
+  @@map("ejecuciones_autopilot")
 }

@@ -78,6 +78,30 @@ export async function obtenerCv(
     }
 }
 
+//Devuelve el PDF tal cual (inline) para que la app lo previsualice.
+export async function verArchivoCv(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        if (!req.usuario) {
+            throw new HttpError(401, 'Falta el token de acceso')
+        }
+
+        const { archivo } = await cvService.leerArchivoDeCv(
+            req.usuario.id,
+            leerIdDeLaRuta(req),
+        )
+
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', 'inline; filename="cv.pdf"')
+        res.status(200).send(archivo)
+    } catch (err) {
+        next(err)
+    }
+}
+
 export async function borrarCv(
     req: Request,
     res: Response,

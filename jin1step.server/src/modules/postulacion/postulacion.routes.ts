@@ -25,6 +25,23 @@ postulacionRouter.get(
     requireRol('CANDIDATO'),
     postulacionController.listarMisPostulaciones,
 )
+//Propuestas del autopiloto (modo revisión): el candidato decide si se envían.
+postulacionRouter.post(
+    '/:id/aprobar',
+    requireRol('CANDIDATO'),
+    postulacionController.aprobarPostulacion,
+)
+postulacionRouter.post(
+    '/:id/descartar',
+    requireRol('CANDIDATO'),
+    postulacionController.descartarPostulacion,
+)
+//Retirar una candidatura propia que la empresa aún no ha revisado.
+postulacionRouter.post(
+    '/:id/retirar',
+    requireRol('CANDIDATO'),
+    postulacionController.retirarPostulacion,
+)
 //Ver el match sin postularse. Es POST porque lleva cuerpo, aunque no cree nada.
 postulacionRouter.post(
     '/simular-match',

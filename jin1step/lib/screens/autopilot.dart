@@ -1,33 +1,56 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../core/api_client.dart';
 import '../core/app_theme.dart';
 import '../services/candidato.service.dart';
+import '../widgets/design_system.dart';
+import '../widgets/valoracion_ia.dart';
 import 'mis_cvs.dart';
 import 'mis_postulaciones.dart';
 
+/// Autopiloto: consentimiento, ajustes, propuestas por revisar (modo
+/// «Revisar antes de enviar»), cupo diario, historial de ejecuciones y las
+/// últimas candidaturas enviadas por IA.
 class AutopilotPage extends StatefulWidget {
-  const AutopilotPage({super.key});
+  const AutopilotPage({super.key, this.mostrarAtras = false, this.service});
+
+  final bool mostrarAtras;
+
+  /// Opcional para poder inyectar un servicio falso en los tests.
+  final CandidatoService? service;
 
   @override
   State<AutopilotPage> createState() => _AutopilotPageState();
 }
 
+/// Cuántas ejecuciones se ven de entrada y cuántas al desplegar el historial.
+const _historialVisible = 5;
+
 class _AutopilotPageState extends State<AutopilotPage> {
-  final _service = CandidatoService();
+  late final CandidatoService _service = widget.service ?? CandidatoService();
   bool _cargando = true;
   bool _guardando = false;
   bool _ejecutando = false;
-  bool _simulando = false;
+  bool _enviandoTodas = false;
   bool _activo = false;
+  // Modo por defecto: el autopiloto propone y el usuario decide.
+  bool _revisarAntes = true;
   bool _suscripcionActiva = false;
-  bool _preferenciasGuardadas = false;
+  String? _plan;
   String? _cvId;
   double _scoreMinimo = 70;
   int _maxPorDia = 5;
   List<Map<String, dynamic>> _cvs = [];
-  List<Map<String, dynamic>> _ofertasSimuladas = [];
+  // Todas las candidaturas creadas por la IA (propuestas incluidas).
+  List<Map<String, dynamic>> _postulacionesIa = [];
+  List<Map<String, dynamic>> _historial = [];
+  bool _historialCompleto = false;
+  // Error del interruptor y de los ajustes: se pinta junto a ellos, no al final.
+  String? _errorAjustes;
+  // Resultado de resolver propuestas: se pinta bajo la lista de propuestas.
+  String? _avisoPropuestas;
+  StatusVariant _varianteAviso = StatusVariant.success;
+  // Resultado de «Ejecutar autopiloto»: se pinta encima del botón.
   String? _error;
   String? _mensaje;
 
@@ -40,22 +63,31 @@ class _AutopilotPageState extends State<AutopilotPage> {
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
-      _error = null;
+      _errorAjustes = null;
     });
     try {
       final resultados = await Future.wait<Object?>([
         _service.obtenerPreferenciasAutopilot(),
         _service.listarCvs(),
         _service.obtenerSuscripcionActiva(),
+        _service.listarPostulaciones().catchError(
+          (_) => <Map<String, dynamic>>[],
+        ),
+        _service.obtenerHistorialAutopilot().catchError(
+          (_) => <Map<String, dynamic>>[],
+        ),
       ]);
       final preferencias = resultados[0] as Map<String, dynamic>;
       if (!mounted) return;
       setState(() {
         _cvs = resultados[1] as List<Map<String, dynamic>>;
         _suscripcionActiva = resultados[2] != null;
+        _plan = (resultados[2] as Map<String, dynamic>?)?['tipoPlan'] as String?;
+        _postulacionesIa = _soloIa(resultados[3] as List<Map<String, dynamic>>);
+        _historial = resultados[4] as List<Map<String, dynamic>>;
         _activo = preferencias['activo'] as bool? ?? false;
+        _revisarAntes = preferencias['revisarAntes'] as bool? ?? true;
         _cvId = preferencias['cvId'] as String?;
-        _preferenciasGuardadas = _cvId != null;
         _scoreMinimo = ((preferencias['scoreMinimo'] as num?)?.toDouble() ?? 70)
             .clamp(0, 100)
             .toDouble();
@@ -64,10 +96,93 @@ class _AutopilotPageState extends State<AutopilotPage> {
             .toInt();
       });
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _errorAjustes = _textoError(error));
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
+  }
+
+  List<Map<String, dynamic>> _soloIa(List<Map<String, dynamic>> todas) {
+    final ia = todas.where((item) => item['postuladoPorIa'] == true).toList();
+    ia.sort((a, b) => _fecha(b).compareTo(_fecha(a)));
+    return ia;
+  }
+
+  DateTime _fecha(Map<String, dynamic> postulacion) =>
+      DateTime.tryParse(postulacion['fechaPostulacion'] as String? ?? '')
+          ?.toLocal() ??
+      DateTime.fromMillisecondsSinceEpoch(0);
+
+  bool _esDeHoy(Map<String, dynamic> postulacion) {
+    final ahora = DateTime.now();
+    final medianoche = DateTime(ahora.year, ahora.month, ahora.day);
+    return !_fecha(postulacion).isBefore(medianoche);
+  }
+
+  /// Candidaturas que el autopiloto creó hoy, sea cual sea su estado: es lo que
+  /// cuenta el servidor para el tope diario (propuestas y descartadas incluidas).
+  int get _cupoHoy => _postulacionesIa.where(_esDeHoy).length;
+
+  /// Enviadas de verdad hoy (sin propuestas pendientes ni descartadas).
+  int get _enviadasHoy => _postulacionesIa
+      .where((p) => _esDeHoy(p) && esCandidaturaEnviada(p))
+      .length;
+
+  /// Propuestas esperando decisión, de mayor a menor encaje.
+  List<Map<String, dynamic>> get _propuestas {
+    final lista = _postulacionesIa
+        .where((p) => p['estado'] == 'PROPUESTA')
+        .toList();
+    lista.sort((a, b) => _encaje(b).compareTo(_encaje(a)));
+    return lista;
+  }
+
+  num _encaje(Map<String, dynamic> p) =>
+      (p['puntuacionIa'] as num?) ?? (p['matchScore'] as num?) ?? 0;
+
+  /// Pasos llenos del cupo diario: proporcional al máximo configurado
+  /// (3 llenos de 5 = 3 de 5 hoy cuando el máximo es 5).
+  int get _pasosCupo =>
+      _maxPorDia <= 0 ? 0 : (_cupoHoy * 5 / _maxPorDia).ceil().clamp(0, 5);
+
+  /// Las retiradas siguen contando para el tope diario (así lo cuenta el
+  /// servidor), pero ya no son «enviadas»: no salen en la lista.
+  List<Map<String, dynamic>> get _enviadasVigentes => _postulacionesIa
+      .where((p) => esCandidaturaEnviada(p) && p['estado'] != 'RETIRADA')
+      .toList();
+
+  Future<void> _verTodasPorIa() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => const MisPostulacionesPage(filtroInicial: 'Por IA'),
+      ),
+    );
+    // Puede haber retirado alguna: se vuelve a leer.
+    await _refrescarTodo();
+  }
+
+  Future<void> _refrescarPostulaciones() async {
+    try {
+      final todas = await _service.listarPostulaciones();
+      if (mounted) setState(() => _postulacionesIa = _soloIa(todas));
+    } catch (_) {
+      // El contador es informativo: si falla, se conserva el último valor.
+    }
+  }
+
+  Future<void> _refrescarHistorial() async {
+    try {
+      final historial = await _service.obtenerHistorialAutopilot();
+      if (mounted) setState(() => _historial = historial);
+    } catch (_) {
+      // El historial es informativo: si falla, se conserva el último.
+    }
+  }
+
+  /// Propuestas, cupo e historial tras ejecutar o resolver propuestas.
+  Future<void> _refrescarTodo() async {
+    await _refrescarPostulaciones();
+    await _refrescarHistorial();
   }
 
   Future<void> _seleccionarCv() async {
@@ -77,17 +192,20 @@ class _AutopilotPageState extends State<AutopilotPage> {
     if (cv != null && mounted) {
       setState(() {
         _cvId = cv['id'] as String?;
-        _preferenciasGuardadas = false;
         if (!_cvs.any((item) => item['id'] == _cvId)) _cvs = [..._cvs, cv];
       });
+      await _guardar();
     }
   }
 
   Future<void> _guardar() async {
+    if (_cvId == null) {
+      setState(() => _errorAjustes = 'Elige un CV para guardar estos ajustes.');
+      return;
+    }
     setState(() {
       _guardando = true;
-      _error = null;
-      _mensaje = null;
+      _errorAjustes = null;
     });
     try {
       await _service.guardarPreferenciasAutopilot({
@@ -95,14 +213,23 @@ class _AutopilotPageState extends State<AutopilotPage> {
         'scoreMinimo': _scoreMinimo.round(),
         'maxPorDia': _maxPorDia,
       });
-      if (mounted) {
-        setState(() {
-          _preferenciasGuardadas = true;
-          _mensaje = 'Preferencias guardadas.';
-        });
-      }
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _errorAjustes = _textoError(error));
+    } finally {
+      if (mounted) setState(() => _guardando = false);
+    }
+  }
+
+  Future<void> _cambiarRevision(bool revisar) async {
+    setState(() {
+      _guardando = true;
+      _errorAjustes = null;
+    });
+    try {
+      await _service.guardarPreferenciasAutopilot({'revisarAntes': revisar});
+      if (mounted) setState(() => _revisarAntes = revisar);
+    } catch (error) {
+      if (mounted) setState(() => _errorAjustes = _textoError(error));
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
@@ -110,19 +237,21 @@ class _AutopilotPageState extends State<AutopilotPage> {
 
   Future<void> _cambiarActivacion(bool activar) async {
     if (activar && !_suscripcionActiva) {
-      await _contratar();
+      setState(
+        () => _errorAjustes =
+            'Necesitas una suscripción activa para usar el autopiloto.',
+      );
       return;
     }
     if (activar && _cvId == null) {
       setState(
-        () => _error = 'Selecciona un CV antes de activar el autopiloto.',
+        () => _errorAjustes = 'Elige un CV antes de activar el autopiloto.',
       );
       return;
     }
     setState(() {
       _guardando = true;
-      _error = null;
-      _mensaje = null;
+      _errorAjustes = null;
     });
     try {
       await _service.guardarPreferenciasAutopilot({
@@ -131,41 +260,29 @@ class _AutopilotPageState extends State<AutopilotPage> {
         'scoreMinimo': _scoreMinimo.round(),
         'maxPorDia': _maxPorDia,
       });
-      if (mounted) {
-        setState(() {
-          _activo = activar;
-          _preferenciasGuardadas = true;
-        });
-      }
+      if (mounted) setState(() => _activo = activar);
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    } finally {
-      if (mounted) setState(() => _guardando = false);
-    }
-  }
-
-  Future<void> _contratar() async {
-    setState(() {
-      _guardando = true;
-      _error = null;
-    });
-    try {
-      final url = await _service.iniciarSuscripcion();
-      final abierta = await launchUrl(
-        Uri.parse(url),
-        mode: LaunchMode.externalApplication,
-      );
-      if (!abierta && mounted) {
-        setState(() => _error = 'No se pudo abrir la página segura de pago.');
-      }
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _errorAjustes = _textoError(error));
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
   }
 
   Future<void> _ejecutarAhora() async {
+    if (!_suscripcionActiva) {
+      setState(() {
+        _mensaje = null;
+        _error = 'Necesitas una suscripción activa para usar el autopiloto.';
+      });
+      return;
+    }
+    if (!_activo) {
+      setState(() {
+        _mensaje = null;
+        _error = 'Activa «Postular por mí» para ejecutar el autopiloto.';
+      });
+      return;
+    }
     setState(() {
       _ejecutando = true;
       _error = null;
@@ -175,307 +292,117 @@ class _AutopilotPageState extends State<AutopilotPage> {
       final resultado = await _service.ejecutarAutopilot();
       final creadas = (resultado['creadas'] as num?)?.toInt() ?? 0;
       final motivo = resultado['motivo'] as String?;
+      // El modo lo dice el servidor; si no viniera, el de los ajustes.
+      final revision = resultado['modo'] != null
+          ? resultado['modo'] == 'REVISION'
+          : _revisarAntes;
       if (mounted) {
         setState(
           () => _mensaje = creadas > 0
-              ? 'Se enviaron $creadas ${creadas == 1 ? 'candidatura' : 'candidaturas'} automáticamente.'
+              ? (revision
+                    ? 'Hay $creadas ${creadas == 1 ? 'propuesta nueva' : 'propuestas nuevas'} para revisar.'
+                    : 'Se enviaron $creadas ${creadas == 1 ? 'candidatura' : 'candidaturas'} automáticamente.')
               : _textoMotivo(motivo),
         );
       }
+      await _refrescarTodo();
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = _textoError(error));
     } finally {
       if (mounted) setState(() => _ejecutando = false);
     }
   }
 
-  Future<void> _simularAhora() async {
-    if (!_preferenciasGuardadas) {
-      setState(() => _error = 'Guarda la configuración antes de simular.');
-      return;
-    }
+  Future<void> _abrirPropuesta(Map<String, dynamic> propuesta) async {
+    final resultado = await showModalBottomSheet<_ResultadoPropuesta>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) =>
+          _DetallePropuesta(postulacion: propuesta, service: _service),
+    );
+    // Aunque se cierre sin decidir, el servidor puede haberla cerrado (oferta
+    // cerrada): se vuelve a leer.
+    await _refrescarTodo();
+    if (resultado == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          resultado == _ResultadoPropuesta.enviada
+              ? 'Candidatura enviada.'
+              : 'Propuesta descartada.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _enviarTodas() async {
+    final pendientes = _propuestas;
     setState(() {
-      _simulando = true;
-      _error = null;
-      _mensaje = null;
-      _ofertasSimuladas = [];
+      _enviandoTodas = true;
+      _avisoPropuestas = null;
     });
-    try {
-      final resultado = await _service.previsualizarAutopilot();
-      final ofertas = (resultado['ofertas'] as List? ?? [])
-          .cast<Map<String, dynamic>>();
-      final motivo = resultado['motivo'] as String?;
-      if (!mounted) return;
-      setState(() {
-        _ofertasSimuladas = ofertas;
-        _mensaje = ofertas.isNotEmpty
-            ? 'Simulación completada: ${ofertas.length} ${ofertas.length == 1 ? 'oferta compatible' : 'ofertas compatibles'}. No se ha enviado ninguna candidatura.'
-            : _textoMotivo(motivo);
-      });
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    } finally {
-      if (mounted) setState(() => _simulando = false);
+    var enviadas = 0;
+    var fallos = 0;
+    String? primerMotivo;
+    for (final propuesta in pendientes) {
+      try {
+        await _service.aprobarPostulacion(propuesta['id'] as String);
+        enviadas++;
+      } catch (error) {
+        fallos++;
+        primerMotivo ??= error.toString();
+      }
     }
+    await _refrescarTodo();
+    if (!mounted) return;
+    setState(() {
+      _enviandoTodas = false;
+      if (fallos == 0) {
+        _varianteAviso = StatusVariant.success;
+        _avisoPropuestas =
+            'Se enviaron $enviadas ${enviadas == 1 ? 'candidatura' : 'candidaturas'}.';
+      } else {
+        _varianteAviso = enviadas == 0
+            ? StatusVariant.error
+            : StatusVariant.warning;
+        _avisoPropuestas =
+            '${enviadas == 0 ? 'No se envió ninguna' : 'Se enviaron $enviadas'}. '
+            'No se pudieron enviar $fallos: $primerMotivo';
+      }
+    });
   }
 
   String _textoMotivo(String? motivo) => switch (motivo) {
-    'limite_diario_alcanzado' =>
-      'Ya alcanzaste el límite diario de candidaturas automáticas.',
+    'limite_diario_alcanzado' => 'Ya alcanzaste el límite diario del autopiloto.',
+    'propuestas_pendientes' =>
+      'Tienes propuestas sin revisar. Revísalas antes de buscar más.',
     'sin_ofertas_disponibles' =>
       'Ya te postulaste a todas las ofertas abiertas disponibles.',
     'sin_ofertas_sobre_score_minimo' =>
       'No hay nuevas ofertas que alcancen tu compatibilidad mínima.',
-    _ => 'No hay candidaturas nuevas para enviar.',
+    _ => 'No hay ofertas nuevas que proponer.',
   };
 
-  @override
-  Widget build(BuildContext context) {
-    final esquema = Theme.of(context).colorScheme;
-    if (_cargando) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+  String _textoError(Object error) {
+    if (error is ApiException) {
+      if (error.status == 402) {
+        return 'Necesitas una suscripción activa para usar el autopiloto.';
+      }
+      if (error.status == 409) {
+        return 'Selecciona un CV activo para el autopiloto.';
+      }
     }
-    return Scaffold(
-      appBar: AppBar(title: const Text('Autopiloto')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          GlassPanel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.auto_awesome, color: esquema.primary, size: 30),
-                const SizedBox(height: 12),
-                Text(
-                  'Tu búsqueda, en piloto automático',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Enviaremos candidaturas a ofertas abiertas que alcancen tu compatibilidad mínima, usando el CV que elijas.',
-                  style: TextStyle(
-                    color: esquema.onSurfaceVariant,
-                    height: 1.45,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            child: SwitchListTile.adaptive(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 18,
-                vertical: 8,
-              ),
-              value: _activo,
-              onChanged: _guardando ? null : _cambiarActivacion,
-              title: const Text(
-                'Autopiloto activado',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              subtitle: Text(
-                _suscripcionActiva
-                    ? 'Se ejecuta automáticamente cada día.'
-                    : 'Requiere una suscripción mensual activa.',
-              ),
-              secondary: Icon(
-                _activo ? Icons.autorenew : Icons.pause_circle_outline,
-                color: esquema.primary,
-              ),
-            ),
-          ),
-          if (!_suscripcionActiva) ...[
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _guardando ? null : _contratar,
-              icon: const Icon(Icons.lock_open_outlined),
-              label: const Text('Activar plan mensual'),
-            ),
-            TextButton(
-              onPressed: _cargar,
-              child: const Text('Ya completé el pago · comprobar estado'),
-            ),
-          ],
-          const SizedBox(height: 20),
-          Text(
-            'Configuración',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 10),
-          Card(
-            child: ListTile(
-              leading: Icon(Icons.description_outlined, color: esquema.primary),
-              title: const Text('CV para postular'),
-              subtitle: Text(_tituloCv ?? 'Selecciona o sube tu CV'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _seleccionarCv,
-            ),
-          ),
-          Card(
-            margin: const EdgeInsets.only(top: 10),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Compatibilidad mínima',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      Text(
-                        '${_scoreMinimo.round()}%',
-                        style: TextStyle(
-                          color: esquema.primary,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Slider(
-                    value: _scoreMinimo,
-                    min: 0,
-                    max: 100,
-                    divisions: 20,
-                    label: '${_scoreMinimo.round()}%',
-                    onChanged: (value) => setState(() {
-                      _scoreMinimo = value;
-                      _preferenciasGuardadas = false;
-                    }),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Máximo de candidaturas al día',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      DropdownButton<int>(
-                        value: _maxPorDia,
-                        items: [
-                          for (var i = 1; i <= 20; i++)
-                            DropdownMenuItem(value: i, child: Text('$i')),
-                        ],
-                        onChanged: (value) => setState(() {
-                          _maxPorDia = value ?? _maxPorDia;
-                          _preferenciasGuardadas = false;
-                        }),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          FilledButton(
-            onPressed: _guardando || _cvId == null ? null : _guardar,
-            child: Text(_guardando ? 'Guardando…' : 'Guardar configuración'),
-          ),
-          if (kDebugMode) ...[
-            const SizedBox(height: 12),
-            Card(
-              color: esquema.secondaryContainer.withValues(alpha: .62),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Prueba segura',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Simula la selección con tu CV y tus filtros. No necesita suscripción y no crea candidaturas.',
-                      style: TextStyle(color: esquema.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: _simulando || _cvId == null
-                          ? null
-                          : _simularAhora,
-                      icon: _simulando
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.science_outlined),
-                      label: Text(
-                        _simulando ? 'Simulando…' : 'Simular sin postular',
-                      ),
-                    ),
-                    for (final oferta in _ofertasSimuladas)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          Icons.work_outline,
-                          color: esquema.primary,
-                        ),
-                        title: Text(oferta['titulo'] as String? ?? 'Oferta'),
-                        subtitle: Text(
-                          [
-                            oferta['empresa'] as String? ?? '',
-                            oferta['ubicacion'] as String? ?? '',
-                          ].where((parte) => parte.isNotEmpty).join(' · '),
-                        ),
-                        trailing: Text(
-                          '${((oferta['score'] as num?) ?? 0).round()}%',
-                          style: TextStyle(
-                            color: esquema.primary,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (_activo && _suscripcionActiva) ...[
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _ejecutando ? null : _ejecutarAhora,
-              icon: _ejecutando
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.play_arrow_rounded),
-              label: Text(_ejecutando ? 'Buscando ofertas…' : 'Ejecutar ahora'),
-            ),
-          ],
-          if (_mensaje != null) ...[
-            const SizedBox(height: 12),
-            _aviso(_mensaje!, esquema.primary, esquema.primaryContainer),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            _aviso(_error!, esquema.error, esquema.errorContainer),
-          ],
-          const SizedBox(height: 16),
-          TextButton.icon(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MisPostulacionesPage()),
-            ),
-            icon: const Icon(Icons.list_alt),
-            label: const Text('Ver mis candidaturas'),
-          ),
-        ],
-      ),
-    );
+    return error.toString();
+  }
+
+  String get _textoSuscripcion {
+    if (!_suscripcionActiva) return 'Sin suscripción';
+    return switch (_plan) {
+      'MENSUAL' => 'Plan mensual',
+      'ANUAL' => 'Plan anual',
+      _ => 'Suscripción activa',
+    };
   }
 
   String? get _tituloCv {
@@ -485,12 +412,530 @@ class _AutopilotPageState extends State<AutopilotPage> {
     return null;
   }
 
-  Widget _aviso(String texto, Color color, Color fondo) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: fondo,
-      borderRadius: BorderRadius.circular(16),
+  String _hace(DateTime fecha) {
+    final diferencia = DateTime.now().difference(fecha);
+    if (diferencia.inMinutes < 1) return 'hace un momento';
+    if (diferencia.inMinutes < 60) return 'hace ${diferencia.inMinutes} min';
+    if (diferencia.inHours < 24) return 'hace ${diferencia.inHours} h';
+    return 'hace ${diferencia.inDays} d';
+  }
+
+  /// «Hoy 09:00», «Ayer 09:00» o «3/11 09:00».
+  String _cuando(DateTime fecha) {
+    final ahora = DateTime.now();
+    final dias = DateTime(ahora.year, ahora.month, ahora.day)
+        .difference(DateTime(fecha.year, fecha.month, fecha.day))
+        .inDays;
+    final hora =
+        '${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}';
+    if (dias == 0) return 'Hoy $hora';
+    if (dias == 1) return 'Ayer $hora';
+    return '${fecha.day}/${fecha.month} $hora';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: _cargando
+            ? const Center(child: AppSpinner(size: 24))
+            : ListView(
+                padding: const EdgeInsets.all(AppSpacing.screen),
+                children: [
+                  _cabecera(),
+                  const SizedBox(height: AppSpacing.gap),
+                  _panelConsentimiento(),
+                  if (_errorAjustes != null) ...[
+                    const SizedBox(height: AppSpacing.group),
+                    Notice(message: _errorAjustes!, variant: StatusVariant.error),
+                  ],
+                  if (_propuestas.isNotEmpty || _avisoPropuestas != null) ...[
+                    const SizedBox(height: AppSpacing.gap),
+                    _seccionPropuestas(),
+                  ],
+                  const SizedBox(height: AppSpacing.gap),
+                  _panelAjustes(),
+                  const SizedBox(height: AppSpacing.gap),
+                  _panelHoy(),
+                  const SizedBox(height: AppSpacing.gap),
+                  const SectionTitle('Historial'),
+                  const SizedBox(height: AppSpacing.group),
+                  _listaHistorial(),
+                  const SizedBox(height: AppSpacing.gap),
+                  const SectionTitle('Últimas enviadas por IA'),
+                  const SizedBox(height: AppSpacing.group),
+                  _listaUltimas(),
+                  if (_mensaje != null) ...[
+                    const SizedBox(height: AppSpacing.gap),
+                    Notice(message: _mensaje!, variant: StatusVariant.success),
+                  ],
+                  if (_error != null) ...[
+                    const SizedBox(height: AppSpacing.gap),
+                    Notice(message: _error!, variant: StatusVariant.error),
+                  ],
+                  const SizedBox(height: AppSpacing.gap),
+                  PrimaryButton(
+                    label: 'Ejecutar autopiloto',
+                    loading: _ejecutando,
+                    loadingLabel: 'Buscando ofertas…',
+                    onPressed: _ejecutarAhora,
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _cabecera() {
+    final pendientes = _propuestas.length;
+    final hoy = _enviadasHoy;
+    final frase = pendientes > 0
+        ? (pendientes == 1
+              ? 'Tienes una propuesta por revisar.'
+              : 'Tienes $pendientes propuestas por revisar.')
+        : hoy == 0
+        ? 'Hoy todavía no ha enviado ninguna candidatura.'
+        : 'Hoy ha enviado $hoy ${hoy == 1 ? 'candidatura' : 'candidaturas'} por ti.';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.mostrarAtras) ...[
+          AppIconButton(
+            icon: Icons.arrow_back,
+            tooltip: 'Volver',
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(height: AppSpacing.group),
+        ],
+        ScreenHeader(
+          title: 'Autopiloto',
+          subtitle: frase,
+          trailing: StatusTag(
+            label: _textoSuscripcion,
+            variant: _suscripcionActiva
+                ? StatusVariant.success
+                : StatusVariant.warning,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _panelConsentimiento() => Panel(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('Postular por mí', style: AppText.h2)),
+            AppSwitch(
+              value: _activo,
+              label: 'Postular por mí',
+              // Sin suscripción no se puede activar: se explica aquí mismo en
+              // vez de dejar un interruptor que falla al tocarlo.
+              onChanged: _guardando || (!_suscripcionActiva && !_activo)
+                  ? null
+                  : _cambiarActivacion,
+            ),
+          ],
+        ),
+        Text(
+          'Autorizas al autopiloto a enviar candidaturas en tu nombre con el CV que elijas. Puedes apagarlo cuando quieras.',
+          style: AppText.mutedBody,
+        ),
+        if (!_suscripcionActiva) ...[
+          const SizedBox(height: AppSpacing.group),
+          Text(
+            'Necesitas una suscripción activa para activarlo.',
+            style: AppText.bodyStrong,
+          ),
+        ],
+      ],
     ),
-    child: Text(texto, style: TextStyle(color: color)),
+  );
+
+  Widget _seccionPropuestas() {
+    final propuestas = _propuestas;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (propuestas.isNotEmpty) ...[
+          SectionTitle(
+            'Propuestas para revisar',
+            trailing: Text('${propuestas.length}', style: AppText.numInline),
+          ),
+          const SizedBox(height: AppSpacing.group),
+          PanelList(
+            children: [
+              for (final propuesta in propuestas) _filaPropuesta(propuesta),
+            ],
+          ),
+          if (propuestas.length > 1) ...[
+            const SizedBox(height: AppSpacing.group),
+            SecondaryButton(
+              label: _enviandoTodas
+                  ? 'Enviando…'
+                  : 'Enviar todas (${propuestas.length})',
+              onPressed: _enviandoTodas ? null : _enviarTodas,
+            ),
+          ],
+        ],
+        if (_avisoPropuestas != null) ...[
+          const SizedBox(height: AppSpacing.group),
+          Notice(message: _avisoPropuestas!, variant: _varianteAviso),
+        ],
+      ],
+    );
+  }
+
+  Widget _filaPropuesta(Map<String, dynamic> propuesta) {
+    final oferta = propuesta['oferta'] as Map<String, dynamic>? ?? {};
+    final empresa = oferta['empresa'] as Map<String, dynamic>?;
+    final motivo = (propuesta['motivoIa'] as String?)?.trim();
+    return ListRow(
+      title: oferta['titulo'] as String? ?? 'Oferta',
+      lines: [
+        empresa?['nombre'] as String? ?? 'Empresa',
+        if (motivo != null && motivo.isNotEmpty)
+          motivo.length > 110 ? '${motivo.substring(0, 107)}…' : motivo,
+      ],
+      trailing: MatchIndicator(match: _encaje(propuesta)),
+      onTap: () => _abrirPropuesta(propuesta),
+    );
+  }
+
+  Widget _panelAjustes() => PanelList(
+    children: [
+      ListRow(
+        title: 'CV que se usa',
+        trailing: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 160),
+          child: Text(
+            _tituloCv ?? 'Elegir',
+            overflow: TextOverflow.ellipsis,
+            style: AppText.bodyStrong.copyWith(color: AppColors.data),
+          ),
+        ),
+        onTap: _seleccionarCv,
+      ),
+      ListRow(
+        title: 'Revisar antes de enviar',
+        lines: const [
+          'El autopiloto te propone ofertas y tú decides cuáles se envían.',
+        ],
+        trailing: AppSwitch(
+          value: _revisarAntes,
+          label: 'Revisar antes de enviar',
+          onChanged: _guardando ? null : _cambiarRevision,
+        ),
+      ),
+      _AjusteDeslizable(
+        etiqueta: 'Puntuación mínima',
+        valor: '${_scoreMinimo.round()} %',
+        slider: _scoreMinimo,
+        min: 0,
+        max: 100,
+        divisiones: 20,
+        onChanged: (v) => setState(() => _scoreMinimo = v),
+        onChangeEnd: (_) => _guardar(),
+      ),
+      _AjusteDeslizable(
+        etiqueta: 'Máximo al día',
+        valor: '$_maxPorDia',
+        slider: _maxPorDia.toDouble(),
+        min: 1,
+        max: 20,
+        divisiones: 19,
+        onChanged: (v) => setState(() => _maxPorDia = v.round()),
+        onChangeEnd: (_) => _guardar(),
+      ),
+    ],
+  );
+
+  Widget _panelHoy() => Panel(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('Hoy', style: AppText.h2)),
+            Semantics(
+              label: '$_cupoHoy de $_maxPorDia del cupo de hoy',
+              excludeSemantics: true,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('$_cupoHoy / $_maxPorDia', style: AppText.numInline),
+                  const SizedBox(width: AppSpacing.group),
+                  Steps(filled: _pasosCupo),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.micro),
+        Text(
+          'Se ejecuta solo una vez al día. También puedes lanzarlo ahora con '
+          'el botón de abajo.',
+          style: AppText.mutedBody,
+        ),
+      ],
+    ),
+  );
+
+  Widget _listaHistorial() {
+    if (_historial.isEmpty) {
+      return Panel(
+        child: Text(
+          'Todavía no se ha ejecutado el autopiloto.',
+          style: AppText.mutedBody,
+        ),
+      );
+    }
+    final visibles = _historialCompleto
+        ? _historial
+        : _historial.take(_historialVisible).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        PanelList(children: [for (final e in visibles) _filaHistorial(e)]),
+        if (_historial.length > _historialVisible) ...[
+          const SizedBox(height: AppSpacing.group),
+          LinkAction(
+            label: _historialCompleto
+                ? 'Ver menos historial'
+                : 'Ver todo el historial',
+            onTap: () => setState(() => _historialCompleto = !_historialCompleto),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _filaHistorial(Map<String, dynamic> ejecucion) {
+    final fecha = DateTime.tryParse(ejecucion['fecha'] as String? ?? '')
+        ?.toLocal();
+    final origen = ejecucion['origen'] == 'DIARIA' ? 'Diaria' : 'Manual';
+    final evaluadas = (ejecucion['evaluadas'] as num?)?.toInt() ?? 0;
+    final propuestas = (ejecucion['propuestas'] as num?)?.toInt() ?? 0;
+    final enviadas = (ejecucion['enviadas'] as num?)?.toInt() ?? 0;
+    final motivo = ejecucion['motivo'] as String?;
+    final via = ejecucion['via'] as String?;
+    return ListRow(
+      title: fecha == null ? origen : '${_cuando(fecha)} · $origen',
+      lines: [
+        [
+          'Evaluó $evaluadas',
+          if (propuestas > 0) 'Propuso $propuestas',
+          if (enviadas > 0) 'Envió $enviadas',
+        ].join(' · '),
+        if (propuestas == 0 && enviadas == 0 && motivo != null)
+          _textoMotivo(motivo),
+      ],
+      trailing: via == null
+          ? null
+          : StatusTag(label: via == 'ia' ? 'IA' : 'Por habilidades'),
+    );
+  }
+
+  Widget _listaUltimas() {
+    final vigentes = _enviadasVigentes;
+    if (vigentes.isEmpty) {
+      return Panel(
+        child: Text(
+          'Aún no hay candidaturas enviadas por IA.',
+          style: AppText.mutedBody,
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        PanelList(
+          children: [
+            for (final postulacion in vigentes.take(3)) _filaEnviada(postulacion),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.group),
+        LinkAction(
+          label: 'Ver todas las enviadas por IA',
+          onTap: _verTodasPorIa,
+        ),
+      ],
+    );
+  }
+
+  Widget _filaEnviada(Map<String, dynamic> postulacion) {
+    final oferta = postulacion['oferta'] as Map<String, dynamic>? ?? {};
+    final empresa = oferta['empresa'] as Map<String, dynamic>?;
+    final nombreEmpresa = empresa?['nombre'] as String?;
+    final cuando = _hace(_fecha(postulacion));
+    return ListRow(
+      title: oferta['titulo'] as String? ?? 'Oferta',
+      lines: [nombreEmpresa == null ? cuando : '$nombreEmpresa · $cuando'],
+      trailing: MatchIndicator(match: _encaje(postulacion)),
+    );
+  }
+}
+
+enum _ResultadoPropuesta { enviada, descartada }
+
+/// Hoja de detalle de una propuesta: por qué la IA la propone, la carta de
+/// presentación y la decisión («Enviar candidatura» o «Descartar»).
+class _DetallePropuesta extends StatefulWidget {
+  const _DetallePropuesta({required this.postulacion, required this.service});
+
+  final Map<String, dynamic> postulacion;
+  final CandidatoService service;
+
+  @override
+  State<_DetallePropuesta> createState() => _DetallePropuestaState();
+}
+
+class _DetallePropuestaState extends State<_DetallePropuesta> {
+  bool _enviando = false;
+  bool _descartando = false;
+  String? _error;
+
+  Future<void> _resolver({required bool aprobar}) async {
+    setState(() {
+      if (aprobar) {
+        _enviando = true;
+      } else {
+        _descartando = true;
+      }
+      _error = null;
+    });
+    final id = widget.postulacion['id'] as String;
+    try {
+      if (aprobar) {
+        await widget.service.aprobarPostulacion(id);
+      } else {
+        await widget.service.descartarPostulacion(id);
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop(
+        aprobar ? _ResultadoPropuesta.enviada : _ResultadoPropuesta.descartada,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _enviando = false;
+        _descartando = false;
+        _error = error is ApiException ? error.mensaje : error.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final propuesta = widget.postulacion;
+    final oferta = propuesta['oferta'] as Map<String, dynamic>? ?? {};
+    final empresa = oferta['empresa'] as Map<String, dynamic>? ?? {};
+    final carta = (propuesta['cartaIa'] as String?)?.trim();
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.screen,
+          AppSpacing.micro,
+          AppSpacing.screen,
+          AppSpacing.screen,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(oferta['titulo'] as String? ?? 'Oferta', style: AppText.h1),
+            const SizedBox(height: AppSpacing.micro),
+            Text(
+              empresa['nombre'] as String? ?? 'Empresa',
+              style: AppText.mutedBody,
+            ),
+            const SizedBox(height: AppSpacing.group),
+            Text(
+              'La empresa no la verá hasta que la envíes.',
+              style: AppText.mutedBody,
+            ),
+            ValoracionIa.deCandidatura(
+              propuesta,
+              titulo: 'Por qué la IA te lo propone',
+            ),
+            if (carta != null && carta.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.gap),
+              const SectionTitle('Carta de presentación'),
+              const SizedBox(height: AppSpacing.group),
+              Panel(child: Text(carta, style: AppText.body)),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: AppSpacing.gap),
+              Notice(message: _error!, variant: StatusVariant.error),
+            ],
+            const SizedBox(height: AppSpacing.gap),
+            PrimaryButton(
+              label: 'Enviar candidatura',
+              loading: _enviando,
+              loadingLabel: 'Enviando…',
+              onPressed: _descartando ? null : () => _resolver(aprobar: true),
+            ),
+            const SizedBox(height: AppSpacing.group),
+            SecondaryButton(
+              label: _descartando ? 'Descartando…' : 'Descartar',
+              onPressed: _enviando || _descartando
+                  ? null
+                  : () => _resolver(aprobar: false),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Fila de ajuste: etiqueta visible, valor mono a la derecha y slider nativo.
+class _AjusteDeslizable extends StatelessWidget {
+  const _AjusteDeslizable({
+    required this.etiqueta,
+    required this.valor,
+    required this.slider,
+    required this.min,
+    required this.max,
+    required this.divisiones,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+
+  final String etiqueta;
+  final String valor;
+  final double slider;
+  final double min;
+  final double max;
+  final int divisiones;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(AppSpacing.gap),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(etiqueta, style: AppText.label)),
+            Text(valor, style: AppText.numInline),
+          ],
+        ),
+        Slider(
+          value: slider,
+          min: min,
+          max: max,
+          divisions: divisiones,
+          semanticFormatterCallback: (v) => '$etiqueta: ${v.round()}',
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
+        ),
+      ],
+    ),
   );
 }

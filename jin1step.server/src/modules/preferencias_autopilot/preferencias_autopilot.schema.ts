@@ -7,6 +7,9 @@ export const actualizarPreferenciasSchema = z
     .object({
         activo: z.boolean(),
 
+        //true: el autopiloto propone y el candidato aprueba cada envío.
+        revisarAntes: z.boolean(),
+
         //null permite desasignar el CV sin desactivar el autopiloto.
         //OJO: zod solo comprueba que sea un uuid. Que ese CV sea SUYO hay que
         //verificarlo en el service contra la BD, o cualquiera podría poner el

@@ -149,6 +149,63 @@ export async function actualizarEstado(
     }
 }
 
+export async function retirarPostulacion(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+
+        res.status(200).json(
+            await postulacionService.retirarPostulacion(
+                usuario.id,
+                leerParam(req, 'id'),
+            ),
+        )
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function aprobarPostulacion(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+
+        res.status(200).json(
+            await postulacionService.aprobarPostulacion(
+                usuario.id,
+                leerParam(req, 'id'),
+            ),
+        )
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function descartarPostulacion(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+
+        res.status(200).json(
+            await postulacionService.descartarPostulacion(
+                usuario.id,
+                leerParam(req, 'id'),
+            ),
+        )
+    } catch (err) {
+        next(err)
+    }
+}
+
 export async function simularMatch(
     req: Request,
     res: Response,

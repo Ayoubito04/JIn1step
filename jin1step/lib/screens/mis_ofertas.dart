@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/app_theme.dart';
+import '../widgets/design_system.dart';
 import '../services/habilidades.service.dart';
 import '../services/ofertas.services.dart';
 import 'candidatos_oferta.dart';

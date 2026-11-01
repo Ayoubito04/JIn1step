@@ -1,7 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '../core/app_theme.dart';
+import '../widgets/design_system.dart';
 import '../services/chat.service.dart';
 import '../services/postulaciones.service.dart';
 import 'mensajes.dart';

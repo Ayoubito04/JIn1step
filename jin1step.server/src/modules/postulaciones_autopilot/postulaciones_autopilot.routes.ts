@@ -19,6 +19,9 @@ if (!env.isProduction) {
     )
 }
 
+//Historial de pasadas (manuales y diarias) del propio usuario.
+postulacionesAutopilotRouter.get('/historial', postulacionesAutopilotController.historial)
+
 //POST porque crea recursos (postulaciones). No lleva body: toda la info viene
 //de las preferencias guardadas + el token.
 postulacionesAutopilotRouter.post(

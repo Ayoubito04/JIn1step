@@ -1,232 +1,196 @@
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+/// Tokens de color de DESIGN.md (estilo "libro de cuentas"): casi todo es
+/// neutro y el azul de marca solo aparece en los datos (`data`).
 class AppColors {
   AppColors._();
 
-  static const primary = Color(0xFF5B3FD0);
-  static const primaryLight = Color(0xFF7A5CF0);
-  static const primaryDark = Color(0xFF4A2FB8);
-  static const primaryTint = Color(0xFFECE8FB);
-  static const ink = Color(0xFF1B1830);
-  static const muted = Color(0xFF5E5A73);
-  static const cardBorder = Color(0xFFE6E2F5);
-  static const fieldBorder = Color(0xFFD8D3EE);
-  static const iconTile = Color(0xFFF0EEF8);
-  static const iconInk = Color(0xFF4A4668);
-  static const pillText = Color(0xFF3B3758);
-  static const barTrack = Color(0xFFE8E4F6);
-  static const badge = Color(0xFFC2255C);
-  static const matchHigh = Color(0xFF0F7A4F);
-  static const matchMid = Color(0xFF8A5A00);
-  static const matchLow = Color(0xFF6B6784);
-  static const successBackground = Color(0xFFE3F4EC);
-  static const successBorder = Color(0xFFBFE3D2);
-  static const successText = Color(0xFF0F7A4F);
-  static const warningBackground = Color(0xFFFCEFD2);
-  static const warningBorder = Color(0xFFF0DBA5);
-  static const warningText = Color(0xFF7A4E00);
-  static const errorBackground = Color(0xFFFBE3E0);
-  static const errorBorder = Color(0xFFF3C4BF);
-  static const errorText = Color(0xFF8F2620);
+  static const ground = Color(0xFFF2F4F7);
+  static const surface = Color(0xFFFFFFFF);
+  static const active = Color(0xFFEEEEEE);
+  static const activeButton = Color(0xFFE5E5E5);
+  static const border = Color(0xFFE5E7EB);
+  static const rule = Color(0xFFF0F0F0);
+  static const control = Color(0xFFD1D5DB);
+  static const text = Color(0xFF111111);
+  static const muted = Color(0xFF5F6368);
+  static const placeholder = Color(0xFF6B6B6B);
+  static const ink = Color(0xFF1D1F20);
+  static const data = Color(0xFF0A66BF);
+  static const positive = Color(0xFF247B50);
+  static const negative = Color(0xFFC4242A);
   static const white = Color(0xFFFFFFFF);
-  static const badgeBorder = white;
+
+  static const tagNeutralBg = active;
+  static const tagNeutralText = text;
+  static const tagSuccessBg = Color(0xFFDCFAE5);
+  static const tagSuccessText = Color(0xFF04250E);
+  static const tagWarningBg = Color(0xFFFFFBEB);
+  static const tagWarningBorder = Color(0xFFFDE68A);
+  static const tagWarningText = Color(0xFF92400E);
+  static const tagErrorBg = Color(0xFFFFEDEA);
+  static const tagErrorText = Color(0xFF831C1E);
+
+  /// Fondos pálidos de avatar: identidad de la persona, nunca datos.
+  static const personTints = [
+    Color(0xFFDDEFE6),
+    Color(0xFFF5E8D3),
+    Color(0xFFDCE7F5),
+    Color(0xFFF3DDE4),
+  ];
+
   static const googleBlue = Color(0xFF4285F4);
   static const googleGreen = Color(0xFF34A853);
   static const googleYellow = Color(0xFFFBBC05);
   static const googleRed = Color(0xFFEA4335);
-  static const shadowCard = Color.fromRGBO(70, 50, 160, .08);
-  static const shadowButton = Color.fromRGBO(91, 63, 208, .28);
-  static const shadowNavigation = Color.fromRGBO(70, 50, 160, .06);
 
-  // Alias temporales para mantener compilables las pantallas existentes
-  // mientras se migran, una por una, al nuevo sistema visual.
-  static const azul = primary;
-  static const tinta = ink;
-  static const fondo = white;
-  static const menta = successBackground;
-}
-
-class AppGradients {
-  AppGradients._();
-
-  static const background = LinearGradient(
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    stops: [0, .38, 1],
-    colors: [Color(0xFFE9E4FA), Color(0xFFF6F4FD), AppColors.white],
-  );
-  static const primary = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [AppColors.primary, AppColors.primaryLight],
-  );
-  static const hero = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [AppColors.primaryDark, AppColors.primaryLight],
-  );
-  static const barFill = LinearGradient(
-    begin: Alignment.centerLeft,
-    end: Alignment.centerRight,
-    colors: [AppColors.primary, AppColors.primaryLight],
-  );
-  static const googleMark = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [
-      AppColors.googleBlue,
-      AppColors.googleGreen,
-      AppColors.googleYellow,
-      AppColors.googleRed,
-      AppColors.googleBlue,
-    ],
-    stops: [0, .28, .5, .72, 1],
-  );
+  // Alias de las pantallas de reclutador, que quedan fuera del rediseño.
+  static const primary = ink;
+  static const azul = data;
+  static const tinta = text;
+  static const fondo = ground;
+  static const menta = tagSuccessBg;
 }
 
 class AppRadii {
   AppRadii._();
 
-  static const card = 20.0;
-  static const authCard = 22.0;
-  static const hero = 22.0;
-  static const button = 16.0;
-  static const field = 14.0;
-  static const search = 16.0;
-  static const iconTile = 12.0;
-  static const pill = 99.0;
-  static const progress = 9.0;
-  static const chatBubble = 18.0;
-  static const chatComposer = 24.0;
+  static const panel = 8.0;
+  static const control = 6.0;
+  static const tag = 4.0;
 }
 
 class AppSpacing {
   AppSpacing._();
 
-  static const screenHorizontal = 18.0;
-  static const authHorizontal = 24.0;
-  static const screenTop = 22.0;
-  static const blockGap = 12.0;
-  static const authBlockGap = 14.0;
-  static const authTop = 92.0;
-  static const cardPadding = 14.0;
-  static const cardGap = 10.0;
+  static const screen = 16.0;
+  static const gap = 16.0;
+  static const group = 8.0;
+  static const micro = 4.0;
+  static const tap = 44.0;
+  static const field = 48.0;
 }
 
-class AppDimensions {
-  AppDimensions._();
+/// Estilos de texto. Bricolage Grotesque en 400/500/600; Geist Mono solo
+/// para cifras, con cifras tabulares.
+class AppText {
+  AppText._();
 
-  static const authLogo = 74.0;
-}
+  static const _tabular = [FontFeature.tabularFigures()];
 
-class AppFontSizes {
-  AppFontSizes._();
+  static TextStyle _bricolage(
+    double size,
+    FontWeight weight,
+    double height, {
+    Color color = AppColors.text,
+  }) => GoogleFonts.bricolageGrotesque(
+    fontSize: size,
+    fontWeight: weight,
+    height: height,
+    color: color,
+  );
 
-  static const authHeading = 26.0;
-  static const body = 14.0;
-  static const muted = 13.0;
-  static const pill = 12.0;
-  static const button = 15.0;
+  static TextStyle _mono(double size, double height, {Color color = AppColors.text}) =>
+      GoogleFonts.geistMono(
+        fontSize: size,
+        fontWeight: FontWeight.w400,
+        height: height,
+        color: color,
+        fontFeatures: _tabular,
+      );
+
+  static TextStyle get display => _mono(33, 1.1);
+  static TextStyle get kpi => _mono(23, 1.2);
+  static TextStyle get numInline => _mono(14, 1.5);
+  static TextStyle get h1 => _bricolage(23, FontWeight.w600, 1.2);
+  static TextStyle get h2 => _bricolage(16, FontWeight.w600, 1.25);
+  static TextStyle get body => _bricolage(14, FontWeight.w400, 1.5);
+  static TextStyle get bodyStrong => _bricolage(14, FontWeight.w500, 1.5);
+  static TextStyle get field => _bricolage(16, FontWeight.w400, 1.5);
+  static TextStyle get label => _bricolage(14, FontWeight.w500, 1.5);
+  static TextStyle get button => _bricolage(14, FontWeight.w600, 1.5);
+  static TextStyle get meta =>
+      _bricolage(12, FontWeight.w400, 1.4, color: AppColors.muted);
+  static TextStyle get metaStrong =>
+      _bricolage(12, FontWeight.w500, 1.4, color: AppColors.muted);
+  static TextStyle get mutedBody =>
+      _bricolage(14, FontWeight.w400, 1.5, color: AppColors.muted);
 }
 
 class AppShadows {
   AppShadows._();
 
-  static const card = BoxShadow(
-    color: AppColors.shadowCard,
-    blurRadius: 12,
-    offset: Offset(0, 3),
-  );
-  static const primaryButton = BoxShadow(
-    color: AppColors.shadowButton,
-    blurRadius: 16,
-    offset: Offset(0, 6),
-  );
-  static const bottomNavigation = BoxShadow(
-    color: AppColors.shadowNavigation,
-    blurRadius: 14,
-    offset: Offset(0, -4),
+  /// Única sombra permitida: lo que flota (compositor del chat, tooltips).
+  static const floating = BoxShadow(
+    color: Color.fromRGBO(0, 0, 0, .06),
+    blurRadius: 8,
+    offset: Offset(0, 2),
   );
 }
 
 ThemeData construirTemaApp() {
-  final esquemaBase = ColorScheme.fromSeed(
-    seedColor: AppColors.primary,
+  final esquema = ColorScheme.fromSeed(
+    seedColor: AppColors.ink,
     brightness: Brightness.light,
-    surface: AppColors.white,
-  );
-  final esquema = esquemaBase.copyWith(
-    primary: AppColors.primary,
+  ).copyWith(
+    primary: AppColors.ink,
     onPrimary: AppColors.white,
-    primaryContainer: AppColors.primaryTint,
-    onPrimaryContainer: AppColors.primaryDark,
-    secondary: AppColors.primaryDark,
+    primaryContainer: AppColors.active,
+    onPrimaryContainer: AppColors.text,
+    secondary: AppColors.ink,
     onSecondary: AppColors.white,
-    surface: AppColors.white,
-    onSurface: AppColors.ink,
+    surface: AppColors.surface,
+    onSurface: AppColors.text,
     onSurfaceVariant: AppColors.muted,
-    outline: AppColors.fieldBorder,
-    outlineVariant: AppColors.cardBorder,
-    error: AppColors.errorText,
+    outline: AppColors.control,
+    outlineVariant: AppColors.border,
+    error: AppColors.negative,
     onError: AppColors.white,
-    errorContainer: AppColors.errorBackground,
-    onErrorContainer: AppColors.errorText,
+    errorContainer: AppColors.tagErrorBg,
+    onErrorContainer: AppColors.tagErrorText,
   );
-  final textoBase = GoogleFonts.plusJakartaSansTextTheme(
+
+  final texto = GoogleFonts.bricolageGrotesqueTextTheme(
     ThemeData.light().textTheme,
-  ).apply(bodyColor: AppColors.ink, displayColor: AppColors.ink);
-  final texto = textoBase.copyWith(
-    headlineSmall: GoogleFonts.plusJakartaSans(
-      fontSize: 24,
-      fontWeight: FontWeight.w800,
-      letterSpacing: -0.4,
-      color: AppColors.ink,
-    ),
-    titleMedium: GoogleFonts.plusJakartaSans(
-      fontSize: 15,
-      fontWeight: FontWeight.w800,
-      height: 1.3,
-      color: AppColors.ink,
-    ),
-    bodyMedium: GoogleFonts.plusJakartaSans(
-      fontSize: 14,
-      fontWeight: FontWeight.w400,
-      color: AppColors.ink,
-    ),
-    bodySmall: GoogleFonts.plusJakartaSans(
-      fontSize: 13,
-      fontWeight: FontWeight.w400,
-      color: AppColors.muted,
-    ),
-    labelLarge: GoogleFonts.plusJakartaSans(
-      fontSize: 13,
-      fontWeight: FontWeight.w600,
-      color: AppColors.ink,
-    ),
-    labelMedium: GoogleFonts.plusJakartaSans(
-      fontSize: 12,
-      fontWeight: FontWeight.w600,
-      color: AppColors.pillText,
-    ),
+  ).apply(bodyColor: AppColors.text, displayColor: AppColors.text).copyWith(
+    headlineSmall: AppText.h1,
+    titleLarge: AppText.h1,
+    titleMedium: AppText.h2,
+    titleSmall: AppText.h2,
+    bodyLarge: AppText.field,
+    bodyMedium: AppText.body,
+    bodySmall: AppText.meta,
+    labelLarge: AppText.label,
+    labelMedium: AppText.metaStrong,
+    labelSmall: AppText.meta,
   );
+
+  OutlineInputBorder borde(Color color, [double ancho = 1]) =>
+      OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppRadii.control),
+        borderSide: BorderSide(color: color, width: ancho),
+      );
 
   return ThemeData(
     useMaterial3: true,
     colorScheme: esquema,
     textTheme: texto,
     scaffoldBackgroundColor: Colors.transparent,
+    splashFactory: NoSplash.splashFactory,
+    iconTheme: const IconThemeData(color: AppColors.text, size: 20),
+    dividerTheme: const DividerThemeData(
+      color: AppColors.rule,
+      thickness: 1,
+      space: 1,
+    ),
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
-      foregroundColor: AppColors.ink,
+      foregroundColor: AppColors.text,
       elevation: 0,
       scrolledUnderElevation: 0,
-      titleTextStyle: texto.titleLarge?.copyWith(
-        fontSize: 24,
-        letterSpacing: -0.4,
-        fontWeight: FontWeight.w800,
-        color: AppColors.ink,
-      ),
+      titleTextStyle: AppText.h1,
     ),
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
@@ -239,191 +203,143 @@ ThemeData construirTemaApp() {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size.fromHeight(50),
+        minimumSize: const Size.fromHeight(AppSpacing.field),
+        backgroundColor: AppColors.ink,
+        foregroundColor: AppColors.white,
+        elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.button),
+          borderRadius: BorderRadius.circular(AppRadii.control),
         ),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        textStyle: AppText.button,
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size.fromHeight(50),
+        minimumSize: const Size.fromHeight(AppSpacing.field),
+        foregroundColor: AppColors.text,
+        side: const BorderSide(color: AppColors.control),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.button),
+          borderRadius: BorderRadius.circular(AppRadii.control),
         ),
-        side: const BorderSide(color: AppColors.fieldBorder),
+        textStyle: AppText.button,
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.data,
+        textStyle: AppText.button,
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AppColors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadii.field),
-        borderSide: const BorderSide(color: AppColors.fieldBorder),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadii.field),
-        borderSide: const BorderSide(color: AppColors.fieldBorder),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadii.field),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
-      ),
+      fillColor: AppColors.surface,
+      isDense: false,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      hintStyle: AppText.field.copyWith(color: AppColors.placeholder),
+      errorStyle: AppText.meta.copyWith(color: AppColors.negative),
+      border: borde(AppColors.control),
+      enabledBorder: borde(AppColors.control),
+      focusedBorder: borde(AppColors.ink, 1.5),
+      errorBorder: borde(AppColors.negative),
+      focusedErrorBorder: borde(AppColors.negative, 1.5),
     ),
     cardTheme: CardThemeData(
       elevation: 0,
-      color: AppColors.white,
+      color: AppColors.surface,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.card),
-        side: const BorderSide(color: AppColors.cardBorder),
+        borderRadius: BorderRadius.circular(AppRadii.panel),
+        side: const BorderSide(color: AppColors.border),
       ),
     ),
     chipTheme: ChipThemeData(
-      backgroundColor: AppColors.primaryTint,
-      selectedColor: AppColors.primary,
-      labelStyle: TextStyle(
-        color: AppColors.pillText,
-        fontWeight: FontWeight.w600,
+      backgroundColor: AppColors.surface,
+      selectedColor: AppColors.ink,
+      labelStyle: AppText.label,
+      side: const BorderSide(color: AppColors.control),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
-      side: const BorderSide(color: AppColors.fieldBorder),
-      shape: const StadiumBorder(),
+    ),
+    sliderTheme: SliderThemeData(
+      activeTrackColor: AppColors.ink,
+      inactiveTrackColor: AppColors.control,
+      thumbColor: AppColors.ink,
+      overlayColor: AppColors.ink.withValues(alpha: .08),
+      trackHeight: 4,
+      valueIndicatorColor: AppColors.ink,
+      valueIndicatorTextStyle: AppText.meta.copyWith(color: AppColors.white),
+    ),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(
+      color: AppColors.ink,
+      linearTrackColor: AppColors.control,
+    ),
+    tooltipTheme: TooltipThemeData(
+      decoration: BoxDecoration(
+        color: AppColors.ink,
+        borderRadius: BorderRadius.circular(AppRadii.control),
+        boxShadow: const [AppShadows.floating],
+      ),
+      textStyle: AppText.meta.copyWith(color: AppColors.white),
+      waitDuration: const Duration(milliseconds: 400),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: AppColors.ink,
+      contentTextStyle: AppText.body.copyWith(color: AppColors.white),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.control),
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: AppColors.surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.panel),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      titleTextStyle: AppText.h2,
+      contentTextStyle: AppText.body,
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: AppColors.surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.panel)),
+      ),
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.surface,
       elevation: 0,
-      height: 72,
-      indicatorColor: AppColors.primaryTint,
+      height: 64,
+      indicatorColor: AppColors.active,
       labelTextStyle: WidgetStateProperty.resolveWith(
-        (states) => TextStyle(
-          fontSize: 11,
+        (states) => AppText.metaStrong.copyWith(
+          color: AppColors.text,
           fontWeight: states.contains(WidgetState.selected)
-              ? FontWeight.w800
-              : FontWeight.w600,
-          color: states.contains(WidgetState.selected)
-              ? AppColors.primaryDark
-              : AppColors.muted,
+              ? FontWeight.w600
+              : FontWeight.w500,
         ),
       ),
     ),
   );
 }
 
-/// Superficie de vidrio discreta para paneles destacados, con blur reducido.
-class GlassPanel extends StatelessWidget {
-  const GlassPanel({
-    super.key,
-    required this.child,
-    this.padding = const EdgeInsets.all(AppSpacing.cardPadding),
-  });
+/// Tokens de movimiento de animation.md. Solo `transform` y opacidad; nada
+/// supera los 300 ms y nunca se usa `easeIn` en la interfaz.
+class Motion {
+  Motion._();
 
-  final Widget child;
-  final EdgeInsetsGeometry padding;
+  static const easeOut = Cubic(0.23, 1, 0.32, 1); // entradas, salidas, feedback
+  static const easeInOut = Cubic(0.77, 0, 0.175, 1); // movimiento en pantalla
+  static const easeDrawer = Cubic(0.32, 0.72, 0, 1); // paneles que se apilan
 
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppRadii.card),
-      child: Container(
-        padding: padding,
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(AppRadii.card),
-          border: Border.all(color: AppColors.cardBorder),
-          boxShadow: const [AppShadows.card],
-        ),
-        child: child,
-      ),
-    );
-  }
+  static const press = Duration(milliseconds: 120);
+  static const fast = Duration(milliseconds: 150); // color, interruptor, tooltip
+  static const base = Duration(milliseconds: 200); // entradas, pasos, burbujas
+  static const slow = Duration(milliseconds: 300); // splash, transición de pantalla
+  static const stagger = Duration(milliseconds: 40); // escalonado entre pasos
 }
 
-/// Fondo compartido de acceso y registro, decorativo y de bajo coste visual.
-class AuthBackdrop extends StatelessWidget {
-  const AuthBackdrop({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    // El fondo animado vive por encima de Navigator en MaterialApp.builder,
-    // así se comparte con login, registro y las demás rutas.
-    return child;
-  }
-}
-
-/// Fondo suave lavanda que pasa a blanco, como en las pantallas del diseño.
-class AnimatedLinesBackground extends StatefulWidget {
-  const AnimatedLinesBackground({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  State<AnimatedLinesBackground> createState() =>
-      _AnimatedLinesBackgroundState();
-}
-
-class _AnimatedLinesBackgroundState extends State<AnimatedLinesBackground> {
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        const DecoratedBox(
-          decoration: BoxDecoration(gradient: AppGradients.background),
-        ),
-        widget.child,
-      ],
-    );
-  }
-}
-
-class QuickAction extends StatelessWidget {
-  const QuickAction({
-    super.key,
-    required this.icono,
-    required this.etiqueta,
-    required this.onTap,
-  });
-
-  final IconData icono;
-  final String etiqueta;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final esquema = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: esquema.primary.withValues(alpha: .09),
-                borderRadius: BorderRadius.circular(19),
-              ),
-              child: Icon(icono, color: esquema.primary),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              etiqueta,
-              style: TextStyle(
-                fontSize: 11,
-                color: esquema.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+/// Movimiento reducido del sistema: menos y más suave, no cero.
+bool reduce(BuildContext context) => MediaQuery.disableAnimationsOf(context);

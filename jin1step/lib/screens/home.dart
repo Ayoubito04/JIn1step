@@ -10,10 +10,9 @@
 //   - Perfil        -> screens/perfil.dart
 // Aquí se dejan como widgets privados de una sola pieza, a modo de esqueleto.
 //
-// Diseño: Material Design 3 "a la Google" — superficies tonales (Card con
-// primaryContainer / surfaceContainer), sin degradados ni desenfoques. Los
-// colores nunca se escriben a mano: siempre salen de Theme.of(context).
-// colorScheme, que ya deriva del azul semilla en core/app_theme.dart.
+// Diseño: DESIGN.md ("libro de cuentas"). Todo se compone con los tokens de
+// core/app_theme.dart y los componentes de widgets/design_system.dart; aquí no
+// se escribe ningún color, tamaño ni radio suelto.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -23,12 +22,15 @@ import '../services/auth.service.dart';
 import '../services/candidato.service.dart';
 import '../services/chat.service.dart';
 import '../services/ofertas.services.dart';
+import '../widgets/brand_logo.dart';
+import '../widgets/design_system.dart';
 import 'autopilot.dart';
 import 'mis_cvs.dart';
 import 'mensajes.dart';
 import 'mis_ofertas.dart';
 import 'mis_postulaciones.dart';
 import 'ofertas.dart';
+import 'perfil.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key, this.ofertasService});
@@ -48,7 +50,17 @@ class _HomeState extends State<Home> {
   int _indice = 0;
   int _versionMensajes = 0;
   final _candidatoService = CandidatoService();
+  final _chatService = ChatService();
+  int _mensajesSinLeer = 0;
   List<Map<String, dynamic>> _entrevistas = [];
+  final Set<String> _entrevistasLeidas = {};
+  // Candidaturas que el autopiloto ha enviado en las últimas 24 h (sin las
+  // retiradas). Sirven de aviso: el autopiloto corre solo en el servidor.
+  List<Map<String, dynamic>> _autopilotRecientes = [];
+  final Set<String> _autopilotLeidas = {};
+  // Propuestas del autopiloto que esperan la decisión del usuario.
+  List<Map<String, dynamic>> _propuestas = [];
+  final Set<String> _propuestasLeidas = {};
   Timer? _temporizadorNotificaciones;
   bool _notificacionesIniciadas = false;
   bool _notificacionesCargando = true;
@@ -93,10 +105,30 @@ class _HomeState extends State<Home> {
     if (_notificacionesIniciadas || _rol != Rol.candidato) return;
     _notificacionesIniciadas = true;
     unawaited(_cargarEntrevistas());
-    _temporizadorNotificaciones = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => unawaited(_cargarEntrevistas()),
-    );
+    unawaited(_cargarMensajesSinLeer());
+    _temporizadorNotificaciones = Timer.periodic(const Duration(seconds: 30), (
+      _,
+    ) {
+      unawaited(_cargarEntrevistas());
+      unawaited(_cargarMensajesSinLeer());
+    });
+  }
+
+  /// Suma de mensajes sin leer de todas las conversaciones: es el número de
+  /// la insignia de la pestaña Chat (distinto del contador de la campana).
+  Future<void> _cargarMensajesSinLeer() async {
+    try {
+      final conversaciones = await _chatService.listarConversaciones();
+      final total = conversaciones.fold<int>(
+        0,
+        (suma, chat) => suma + ((chat['sinLeer'] as num?)?.toInt() ?? 0),
+      );
+      if (mounted && total != _mensajesSinLeer) {
+        setState(() => _mensajesSinLeer = total);
+      }
+    } catch (_) {
+      // La insignia es informativa: si falla, se conserva el último valor.
+    }
   }
 
   Future<void> _cargarEntrevistas() async {
@@ -105,6 +137,31 @@ class _HomeState extends State<Home> {
       final entrevistas = postulaciones
           .where((postulacion) => postulacion['estado'] == 'ENTREVISTA')
           .toList();
+      final recientesIa = postulaciones.where(_esAvisoDeAutopilot).toList();
+      final propuestas = postulaciones
+          .where((postulacion) => postulacion['estado'] == 'PROPUESTA')
+          .toList();
+      final idsPropuestasAnteriores = _propuestas
+          .map((postulacion) => postulacion['id'])
+          .toSet();
+      final nuevasPropuestas = _primeraCargaEntrevistas
+          ? 0
+          : propuestas
+                .where(
+                  (postulacion) =>
+                      !idsPropuestasAnteriores.contains(postulacion['id']),
+                )
+                .length;
+      final idsIaAnteriores = _autopilotRecientes
+          .map((postulacion) => postulacion['id'])
+          .toSet();
+      final nuevasIa = _primeraCargaEntrevistas
+          ? 0
+          : recientesIa
+                .where(
+                  (postulacion) => !idsIaAnteriores.contains(postulacion['id']),
+                )
+                .length;
       final idsAnteriores = _entrevistas
           .map((postulacion) => postulacion['id'])
           .toSet();
@@ -117,9 +174,35 @@ class _HomeState extends State<Home> {
       if (!mounted) return;
       setState(() {
         _entrevistas = entrevistas;
+        _autopilotRecientes = recientesIa;
+        _propuestas = propuestas;
         _notificacionesCargando = false;
       });
       _primeraCargaEntrevistas = false;
+
+      if (nuevasPropuestas > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              nuevasPropuestas == 1
+                  ? 'El autopiloto tiene una propuesta nueva para revisar.'
+                  : 'El autopiloto tiene $nuevasPropuestas propuestas nuevas para revisar.',
+            ),
+          ),
+        );
+      }
+
+      if (nuevasIa > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              nuevasIa == 1
+                  ? 'El autopiloto ha enviado una candidatura nueva.'
+                  : 'El autopiloto ha enviado $nuevasIa candidaturas nuevas.',
+            ),
+          ),
+        );
+      }
 
       if (hayNuevaEntrevista) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -134,16 +217,27 @@ class _HomeState extends State<Home> {
     }
   }
 
+  /// Enviada por el autopiloto en las últimas 24 h y no retirada. Las
+  /// propuestas tienen su propio aviso (esperan decisión, sea cual sea su edad).
+  bool _esAvisoDeAutopilot(Map<String, dynamic> postulacion) {
+    if (postulacion['postuladoPorIa'] != true) return false;
+    const excluidas = {'RETIRADA', 'PROPUESTA', 'DESCARTADA'};
+    if (excluidas.contains(postulacion['estado'])) return false;
+    final fecha = DateTime.tryParse(
+      postulacion['fechaPostulacion'] as String? ?? '',
+    );
+    return fecha != null &&
+        DateTime.now().difference(fecha) < const Duration(hours: 24);
+  }
+
   void _mostrarNotificaciones() {
     showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,
       builder: (context) {
-        final esquema = Theme.of(context).colorScheme;
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            padding: const EdgeInsets.all(AppSpacing.screen),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -151,61 +245,142 @@ class _HomeState extends State<Home> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        'Notificaciones',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                      child: Semantics(
+                        header: true,
+                        child: Text('Notificaciones', style: AppText.h1),
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Actualizar',
+                    AppIconButton(
+                      icon: Icons.refresh,
+                      tooltip: 'Actualizar notificaciones',
                       onPressed: () => unawaited(_cargarEntrevistas()),
-                      icon: const Icon(Icons.refresh),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                if (_notificacionesCargando && _entrevistas.isEmpty)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator(),
+                const SizedBox(height: AppSpacing.gap),
+                if (_notificacionesCargando &&
+                    _entrevistas.isEmpty &&
+                    _propuestas.isEmpty &&
+                    _autopilotRecientes.isEmpty)
+                  const Panel(child: Center(child: AppSpinner(size: 24)))
+                else if (_entrevistas.isEmpty &&
+                    _propuestas.isEmpty &&
+                    _autopilotRecientes.isEmpty)
+                  Panel(
+                    child: Text(
+                      'Todavía no tienes notificaciones.',
+                      style: AppText.mutedBody,
                     ),
                   )
-                else if (_entrevistas.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 28),
-                    child: Center(
-                      child: Column(
+                else
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: PanelList(
                         children: [
-                          Icon(
-                            Icons.notifications_none,
-                            size: 42,
-                            color: esquema.primary,
-                          ),
-                          const SizedBox(height: 10),
-                          const Text('Todavía no tienes entrevistas.'),
+                          for (final postulacion in _entrevistas)
+                            _filaEntrevista(context, postulacion),
+                          for (final postulacion in _propuestas)
+                            _filaPropuesta(context, postulacion),
+                          for (final postulacion in _autopilotRecientes)
+                            _filaAutopilot(context, postulacion),
                         ],
                       ),
                     ),
-                  )
-                else ...[
-                  for (final postulacion in _entrevistas)
-                    _NotificacionEntrevista(
-                      postulacion: postulacion,
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const MisPostulacionesPage(),
-                          ),
-                        );
-                      },
-                    ),
-                ],
+                  ),
               ],
             ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _filaEntrevista(
+    BuildContext context,
+    Map<String, dynamic> postulacion,
+  ) {
+    final id = postulacion['id'];
+    final leida = id is String && _entrevistasLeidas.contains(id);
+    final oferta = postulacion['oferta'] as Map<String, dynamic>? ?? {};
+    final empresa = oferta['empresa'] as Map<String, dynamic>? ?? {};
+    return ListRow(
+      title: oferta['titulo'] as String? ?? 'Entrevista',
+      strongTitle: !leida,
+      lines: [
+        '${empresa['nombre'] ?? 'El reclutador'} te ha seleccionado para una entrevista.',
+        'Contacta por el chat para acordar fecha y hora.',
+      ],
+      trailing: leida ? null : const StatusTag(label: 'Nueva'),
+      onTap: () {
+        if (id is String) {
+          setState(() => _entrevistasLeidas.add(id));
+        }
+        Navigator.of(context).pop();
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                MisPostulacionesPage(postulacionId: id is String ? id : null),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _filaPropuesta(
+    BuildContext context,
+    Map<String, dynamic> postulacion,
+  ) {
+    final id = postulacion['id'];
+    final leida = id is String && _propuestasLeidas.contains(id);
+    final oferta = postulacion['oferta'] as Map<String, dynamic>? ?? {};
+    final empresa = oferta['empresa'] as Map<String, dynamic>? ?? {};
+    return ListRow(
+      title: 'El autopiloto te propone ${oferta['titulo'] ?? 'una oferta'}',
+      strongTitle: !leida,
+      lines: [
+        empresa['nombre'] as String? ?? 'Empresa',
+        'Revísala y decide si se envía.',
+      ],
+      trailing: leida ? null : const StatusTag(label: 'Nueva'),
+      onTap: () {
+        if (id is String) {
+          setState(() => _propuestasLeidas.add(id));
+        }
+        Navigator.of(context).pop();
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const AutopilotPage(mostrarAtras: true),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _filaAutopilot(
+    BuildContext context,
+    Map<String, dynamic> postulacion,
+  ) {
+    final id = postulacion['id'];
+    final leida = id is String && _autopilotLeidas.contains(id);
+    final oferta = postulacion['oferta'] as Map<String, dynamic>? ?? {};
+    final empresa = oferta['empresa'] as Map<String, dynamic>? ?? {};
+    return ListRow(
+      title: oferta['titulo'] as String? ?? 'Candidatura',
+      strongTitle: !leida,
+      lines: [
+        'El autopiloto te ha postulado en ${empresa['nombre'] ?? 'una empresa'}.',
+        'Puedes revisarla o retirarla si no te interesa.',
+      ],
+      trailing: leida ? null : const StatusTag(label: 'Nueva'),
+      onTap: () {
+        if (id is String) {
+          setState(() => _autopilotLeidas.add(id));
+        }
+        Navigator.of(context).pop();
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                MisPostulacionesPage(postulacionId: id is String ? id : null),
           ),
         );
       },
@@ -218,16 +393,13 @@ class _HomeState extends State<Home> {
     super.dispose();
   }
 
-  Future<void> _cerrarSesion() async {
-    await AuthService().logout();
-    if (!mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (r) => false);
+  void _irAPestana(int indice) {
+    setState(() {
+      _indice = indice;
+      if (indice == (_rol == Rol.candidato ? 3 : 2)) _versionMensajes++;
+    });
+    if (_rol == Rol.candidato) unawaited(_cargarMensajesSinLeer());
   }
-
-  void _irAPestana(int indice) => setState(() {
-    _indice = indice;
-    if (indice == (_rol == Rol.candidato ? 3 : 2)) _versionMensajes++;
-  });
 
   @override
   Widget build(BuildContext context) {
@@ -248,31 +420,60 @@ class _HomeState extends State<Home> {
         _Seccion(
           etiqueta: 'Inicio',
           icono: Icons.home_outlined,
-          iconoActivo: Icons.home,
+          iconoActivo: Icons.home_outlined,
           pagina: _InicioCandidatoTab(
-            usuario: usuario,
+            notificacionesNoLeidas:
+                _entrevistas
+                    .where(
+                      (p) =>
+                          p['id'] is String &&
+                          !_entrevistasLeidas.contains(p['id']),
+                    )
+                    .length +
+                _autopilotRecientes
+                    .where(
+                      (p) =>
+                          p['id'] is String &&
+                          !_autopilotLeidas.contains(p['id']),
+                    )
+                    .length +
+                _propuestas
+                    .where(
+                      (p) =>
+                          p['id'] is String &&
+                          !_propuestasLeidas.contains(p['id']),
+                    )
+                    .length,
+            mensajesSinLeer: _mensajesSinLeer,
+            onMostrarNotificaciones: _mostrarNotificaciones,
             onIrAPestana: _irAPestana,
             onVerCandidaturas: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MisPostulacionesPage()),
+            ),
+            onVerPerfil: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    PerfilPage(usuario: usuario, mostrarAtras: true),
+              ),
             ),
           ),
         ),
         _Seccion(
           etiqueta: 'Ofertas',
           icono: Icons.work_outline,
-          iconoActivo: Icons.work,
+          iconoActivo: Icons.work_outline,
           pagina: Ofertas(ofertaService: widget.ofertasService),
         ),
         _Seccion(
           etiqueta: 'Autopiloto',
-          icono: Icons.auto_awesome_outlined,
-          iconoActivo: Icons.auto_awesome,
+          icono: Icons.bolt_outlined,
+          iconoActivo: Icons.bolt_outlined,
           pagina: const AutopilotPage(),
         ),
         _Seccion(
           etiqueta: 'Chat',
           icono: Icons.chat_bubble_outline,
-          iconoActivo: Icons.chat_bubble,
+          iconoActivo: Icons.chat_bubble_outline,
           pagina: MensajesPage(
             key: ValueKey(_versionMensajes),
             usuarioId: usuario['id'] as String,
@@ -281,7 +482,7 @@ class _HomeState extends State<Home> {
         _Seccion(
           etiqueta: 'Mi CV',
           icono: Icons.person_outline,
-          iconoActivo: Icons.person,
+          iconoActivo: Icons.person_outline,
           pagina: const MisCvsPage(seleccionable: false),
         ),
       ] else ...[
@@ -289,13 +490,7 @@ class _HomeState extends State<Home> {
           etiqueta: 'Inicio',
           icono: Icons.home_outlined,
           iconoActivo: Icons.home,
-          pagina: _InicioTab(
-            usuario: usuario,
-            esCandidato: false,
-            onIrAPestana: _irAPestana,
-            entrevistas: _entrevistas,
-            onMostrarNotificaciones: _mostrarNotificaciones,
-          ),
+          pagina: _InicioTab(usuario: usuario, onIrAPestana: _irAPestana),
         ),
         _Seccion(
           etiqueta: 'Mis ofertas',
@@ -316,11 +511,7 @@ class _HomeState extends State<Home> {
           etiqueta: 'Perfil',
           icono: Icons.person_outline,
           iconoActivo: Icons.person,
-          pagina: _PerfilTab(
-            usuario: usuario,
-            rol: _rol!,
-            onCerrarSesion: _cerrarSesion,
-          ),
+          pagina: PerfilPage(usuario: usuario),
         ),
       ],
     ];
@@ -334,59 +525,35 @@ class _HomeState extends State<Home> {
         index: _indice,
         children: [for (final s in secciones) s.pagina],
       ),
-      // El estilo de la barra (colores, tipografía) sale de
-      // navigationBarTheme en core/app_theme.dart.
-      bottomNavigationBar: NavigationBar(
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        selectedIndex: _indice,
-        onDestinationSelected: _irAPestana,
-        destinations: [
-          for (final s in secciones)
-            NavigationDestination(
-              icon: Icon(s.icono),
-              selectedIcon: Icon(s.iconoActivo),
-              label: s.etiqueta,
+      // Candidato: BottomNav del sistema de diseño (5 pestañas del PDF, con la
+      // insignia de mensajes sin leer sobre Chat). El diseño no cubre al
+      // reclutador, que mantiene su NavigationBar con el estilo del tema.
+      bottomNavigationBar: esCandidato
+          ? BottomNav(
+              selectedIndex: _indice,
+              unreadMessages: _mensajesSinLeer,
+              items: [
+                for (var i = 0; i < secciones.length; i++)
+                  BottomNavItem(
+                    label: secciones[i].etiqueta,
+                    icon: secciones[i].icono,
+                    onTap: () => _irAPestana(i),
+                  ),
+              ],
+            )
+          : NavigationBar(
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+              selectedIndex: _indice,
+              onDestinationSelected: _irAPestana,
+              destinations: [
+                for (final s in secciones)
+                  NavigationDestination(
+                    icon: Icon(s.icono),
+                    selectedIcon: Icon(s.iconoActivo),
+                    label: s.etiqueta,
+                  ),
+              ],
             ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Datos de una pestaña: qué icono lleva y qué pinta.
-class _NotificacionEntrevista extends StatelessWidget {
-  const _NotificacionEntrevista({
-    required this.postulacion,
-    required this.onTap,
-  });
-
-  final Map<String, dynamic> postulacion;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final oferta = postulacion['oferta'] as Map<String, dynamic>? ?? {};
-    final empresa = oferta['empresa'] as Map<String, dynamic>? ?? {};
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: Icon(
-            Icons.event_available_outlined,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
-          ),
-        ),
-        title: Text(
-          oferta['titulo'] as String? ?? 'Entrevista',
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        subtitle: Text(
-          '${empresa['nombre'] ?? 'El reclutador'} te ha seleccionado para una entrevista. Contacta por el chat para acordar fecha y hora.',
-        ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      ),
     );
   }
 }
@@ -405,41 +572,26 @@ class _Seccion {
   final Widget pagina;
 }
 
-// ─── Cabecera compartida ────────────────────────────────────────────────
+String _plural(int n, String uno, String varios) =>
+    '$n ${n == 1 ? uno : varios}';
 
-/// Título grande arriba de una pestaña, como el "Hola" de Gmail o el
-/// encabezado de Google One: texto sobre el fondo normal, sin caja de color
-/// detrás. Es la alternativa Material 3 a la cabecera con degradado.
-class _Encabezado extends StatelessWidget {
-  const _Encabezado({required this.titulo});
-
-  final String titulo;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
-      child: Text(
-        titulo,
-        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-          fontWeight: FontWeight.w600,
-          color: Theme.of(context).colorScheme.onSurface,
-        ),
-      ),
-    );
-  }
-}
-
-/// Resumen del candidato, construido con los datos del backend y con la
-/// composición visual de la referencia PNG de Inicio.
+/// Inicio del candidato (DESIGN.md): marca y campana, «Hoy» con la frase de
+/// lo más importante, cuatro cifras y los dos mejores matches. Todo sale de
+/// datos reales del backend.
 class _InicioCandidatoTab extends StatefulWidget {
   const _InicioCandidatoTab({
-    required this.usuario,
+    required this.notificacionesNoLeidas,
+    required this.mensajesSinLeer,
+    required this.onMostrarNotificaciones,
     required this.onIrAPestana,
     required this.onVerCandidaturas,
+    required this.onVerPerfil,
   });
 
-  final Map<String, dynamic> usuario;
+  final VoidCallback onVerPerfil;
+  final int notificacionesNoLeidas;
+  final int mensajesSinLeer;
+  final VoidCallback onMostrarNotificaciones;
   final ValueChanged<int> onIrAPestana;
   final VoidCallback onVerCandidaturas;
 
@@ -450,12 +602,10 @@ class _InicioCandidatoTab extends StatefulWidget {
 class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
   final _candidato = CandidatoService();
   final _ofertas = OfertasService();
-  final _chat = ChatService();
   bool _cargando = true;
   String? _error;
   List<Map<String, dynamic>> _postulaciones = [];
   List<Map<String, dynamic>> _ofertasDisponibles = [];
-  List<Map<String, dynamic>> _conversaciones = [];
   Map<String, dynamic> _preferencias = {};
   Set<String> _habilidades = {};
 
@@ -471,10 +621,9 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
         _candidato.listarPostulaciones(),
         _candidato.obtenerPreferenciasAutopilot(),
         _ofertas.getAllOfertas(),
-        _chat.listarConversaciones(),
         _candidato.listarCvs(),
       ]);
-      final cvs = datos[4] as List<Map<String, dynamic>>;
+      final cvs = datos[3] as List<Map<String, dynamic>>;
       Set<String> habilidades = {};
       if (cvs.isNotEmpty && cvs.first['id'] is String) {
         final lista = await _candidato.listarHabilidadesCv(
@@ -490,19 +639,22 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
       }
       if (!mounted) return;
       setState(() {
-        _postulaciones = datos[0] as List<Map<String, dynamic>>;
+        // Sin propuestas pendientes ni descartadas: no son candidaturas.
+        _postulaciones = (datos[0] as List<Map<String, dynamic>>)
+            .where(esCandidaturaEnviada)
+            .toList();
         _preferencias = datos[1] as Map<String, dynamic>;
         _ofertasDisponibles = datos[2] as List<Map<String, dynamic>>;
-        _conversaciones = datos[3] as List<Map<String, dynamic>>;
         _habilidades = habilidades;
         _cargando = false;
       });
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = error.toString();
           _cargando = false;
         });
+      }
     }
   }
 
@@ -553,289 +705,151 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final esquema = Theme.of(context).colorScheme;
-    if (_cargando) return const Center(child: CircularProgressIndicator());
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'No se pudo cargar tu resumen',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: esquema.onSurfaceVariant),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _cargando = true;
-                    _error = null;
-                  });
-                  _cargar();
-                },
-                child: const Text('Reintentar'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+  Widget build(BuildContext context) => SafeArea(
+    bottom: false,
+    child: _cargando
+        ? const Center(child: AppSpinner(size: 24))
+        : _error != null
+        ? _vistaError()
+        : _contenido(),
+  );
 
+  Widget _vistaError() => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(AppSpacing.screen),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('No se pudo cargar tu resumen', style: AppText.h2),
+          const SizedBox(height: AppSpacing.group),
+          Text(_error!, textAlign: TextAlign.center, style: AppText.meta),
+          const SizedBox(height: AppSpacing.gap),
+          SecondaryButton(
+            label: 'Reintentar',
+            onPressed: () {
+              setState(() {
+                _cargando = true;
+                _error = null;
+              });
+              _cargar();
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+
+  /// Frase con lo más importante: qué espera respuesta y qué hizo el
+  /// autopiloto hoy.
+  String _frase({
+    required int entrevistas,
+    required bool activo,
+    required int hoy,
+    required int limite,
+  }) {
+    final partes = [
+      if (entrevistas > 0) _plural(entrevistas, 'entrevista', 'entrevistas'),
+      if (widget.mensajesSinLeer > 0)
+        _plural(
+          widget.mensajesSinLeer,
+          'mensaje sin leer',
+          'mensajes sin leer',
+        ),
+    ];
+    final principal = partes.isEmpty
+        ? 'Todo al día. Revisa las ofertas que encajan contigo.'
+        : 'Tienes ${partes.join(' y ')}.';
+    if (!activo) return principal;
+    return '$principal El autopiloto ha enviado $hoy de $limite candidaturas hoy.';
+  }
+
+  Widget _contenido() {
     final entrevistas = _postulaciones
         .where((p) => p['estado'] == 'ENTREVISTA')
         .length;
-    final scores = _postulaciones
-        .map((p) => p['matchScore'])
-        .whereType<num>()
-        .toList();
-    final media = scores.isEmpty
-        ? null
-        : (scores.fold<double>(0, (sum, score) => sum + score) / scores.length)
-              .round();
+    final pendientes = _postulaciones
+        .where((p) => p['estado'] == 'PENDIENTE' || p['estado'] == 'ENVIADA')
+        .length;
     final hoy = _postulaciones
         .where(
           (p) => p['postuladoPorIa'] == true && _esHoy(p['fechaPostulacion']),
         )
         .length;
     final limite = (_preferencias['maxPorDia'] as num?)?.toInt() ?? 5;
-    final minimo = (_preferencias['scoreMinimo'] as num?)?.toInt() ?? 70;
     final activo = _preferencias['activo'] == true;
     final matches = _mejores;
-    final inicial = (widget.usuario['nombre'] as String? ?? 'U').trim();
 
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          stops: [0, .38, 1],
-          colors: [Color(0xFFE9E4FA), Color(0xFFF6F4FD), AppColors.white],
-        ),
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
+    return ListView(
+      padding: const EdgeInsets.all(AppSpacing.screen),
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Hola de nuevo',
-                        style: TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 13,
-                        ),
-                      ),
-                      Text(
-                        'Tu resumen',
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              height: 1.1,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: AppColors.primary,
-                  child: Text(
-                    inicial.isEmpty
-                        ? 'U'
-                        : inicial.substring(0, 1).toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
+            const BrandLogo(size: 40),
+            const SizedBox(width: AppSpacing.group),
+            Expanded(child: Text('JIn1Step', style: AppText.h2)),
+            AppIconButton(
+              icon: Icons.person_outline,
+              tooltip: 'Ver perfil',
+              onPressed: widget.onVerPerfil,
             ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.fromLTRB(18, 15, 18, 14),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                    colors: [AppColors.primaryDark, AppColors.primaryLight],
-                ),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          activo ? 'Autopiloto activo' : 'Autopiloto inactivo',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: .2),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          'Mín. ' + minimo.toString() + '%',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    hoy.toString() +
-                        ' de ' +
-                        limite.toString() +
-                        ' postulaciones enviadas hoy',
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                  ),
-                  const SizedBox(height: 9),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: LinearProgressIndicator(
-                      value: limite == 0 ? 0 : (hoy / limite).clamp(0.0, 1.0),
-                      minHeight: 7,
-                      backgroundColor: Colors.white.withValues(alpha: .28),
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _metrica(
-                    context,
-                    _postulaciones.length.toString(),
-                    'Candidaturas',
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _metrica(
-                    context,
-                    entrevistas.toString(),
-                    'Entrevistas',
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _metrica(
-                    context,
-                    media == null ? '—' : media.toString() + '%',
-                    'Match medio',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Mejores matches',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => widget.onIrAPestana(1),
-                  child: const Text('Ver todas'),
-                ),
-              ],
-            ),
-            if (matches.isEmpty)
-              _panelVacio('Sube un CV para ver qué ofertas encajan contigo.')
-            else
-              for (final match in matches)
-                _tarjetaMatch(context, match.oferta, match.score),
-            const SizedBox(height: 6),
-            Text(
-              'Actividad reciente',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            _actividad(context),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: widget.onVerCandidaturas,
-              child: const Text('Ver mis candidaturas'),
+            const SizedBox(width: AppSpacing.group),
+            NotificationBell(
+              count: widget.notificacionesNoLeidas,
+              onPressed: widget.onMostrarNotificaciones,
             ),
           ],
         ),
-      ),
+        const SizedBox(height: AppSpacing.gap),
+        ScreenHeader(
+          title: 'Hoy',
+          subtitle: _frase(
+            entrevistas: entrevistas,
+            activo: activo,
+            hoy: hoy,
+            limite: limite,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.gap),
+        KpiGrid(
+          items: [
+            KpiItem('Candidaturas', '${_postulaciones.length}'),
+            KpiItem('Entrevistas', '$entrevistas'),
+            KpiItem('Pendientes de revisión', '$pendientes'),
+            KpiItem('Mensajes sin leer', '${widget.mensajesSinLeer}'),
+          ],
+        ),
+        LinkAction(
+          label: 'Ver mis candidaturas',
+          onTap: widget.onVerCandidaturas,
+        ),
+        const SizedBox(height: AppSpacing.group),
+        SectionTitle(
+          'Mejores matches',
+          trailing: LinkAction(
+            label: 'Ver todas las ofertas',
+            onTap: () => widget.onIrAPestana(1),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.group),
+        if (matches.isEmpty)
+          Panel(
+            child: Text(
+              'Sube un CV para ver qué ofertas encajan contigo.',
+              style: AppText.mutedBody,
+            ),
+          )
+        else
+          PanelList(
+            children: [
+              for (final match in matches)
+                _filaMatch(match.oferta, match.score),
+            ],
+          ),
+      ],
     );
   }
 
-  Widget _metrica(BuildContext context, String valor, String titulo) =>
-      Container(
-        height: 72,
-        padding: const EdgeInsets.fromLTRB(11, 10, 8, 8),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE7E1F8)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              valor,
-              style: const TextStyle(
-                color: AppColors.primaryDark,
-                fontSize: 23,
-                fontWeight: FontWeight.w800,
-                height: 1,
-              ),
-            ),
-            const Spacer(),
-            Text(
-              titulo,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppColors.muted, fontSize: 11),
-            ),
-          ],
-        ),
-      );
-
-  Widget _tarjetaMatch(
-    BuildContext context,
-    Map<String, dynamic> oferta,
-    int score,
-  ) {
+  Widget _filaMatch(Map<String, dynamic> oferta, int score) {
     final empresa = oferta['empresa'] as Map<String, dynamic>? ?? {};
     final modalidad = switch (oferta['modalidad']) {
       'REMOTO' => 'Remoto',
@@ -843,602 +857,57 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
       'PRESENCIAL' => 'Presencial',
       _ => '',
     };
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () => widget.onIrAPestana(1),
-        child: Padding(
-          padding: const EdgeInsets.all(13),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.iconTile,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.work_outline,
-                  color: AppColors.iconInk,
-                  size: 19,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      oferta['titulo'] as String? ?? 'Oferta',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      (empresa['nombre'] as String? ?? 'Empresa') +
-                          (modalidad.isEmpty ? '' : ' · ' + modalidad),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                score.toString() + '%',
-                style: TextStyle(
-                  color: score >= 80
-                      ? AppColors.matchHigh
-                      : AppColors.matchMid,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return ListRow(
+      title: oferta['titulo'] as String? ?? 'Oferta',
+      lines: [
+        (empresa['nombre'] as String? ?? 'Empresa') +
+            (modalidad.isEmpty ? '' : ' · $modalidad'),
+      ],
+      trailing: MatchIndicator(match: score),
+      onTap: () => widget.onIrAPestana(1),
     );
   }
-
-  Widget _actividad(BuildContext context) {
-    if (_conversaciones.isEmpty) {
-      return _panelVacio(
-        'Todavía no hay actividad. Tus mensajes y cambios aparecerán aquí.',
-      );
-    }
-    final chat = _conversaciones.first;
-    final persona = chat['interlocutor'] as Map<String, dynamic>? ?? {};
-    final ultimo = chat['ultimoMensaje'] as Map<String, dynamic>? ?? {};
-    final nombre = (persona['nombre'] as String? ?? 'Tu reclutador').trim();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE7E1F8)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  nombre + ' te ha escrito',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  ultimo['contenido'] as String? ??
-                      'Tienes una conversación nueva',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            _hora(ultimo['createdAt']),
-            style: const TextStyle(color: AppColors.muted, fontSize: 11),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _hora(Object? fecha) {
-    if (fecha is! String) return '';
-    final date = DateTime.tryParse(fecha)?.toLocal();
-    if (date == null) return '';
-    return date.hour.toString().padLeft(2, '0') +
-        ':' +
-        date.minute.toString().padLeft(2, '0');
-  }
-
-  Widget _panelVacio(String texto) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: AppColors.white,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: const Color(0xFFE7E1F8)),
-    ),
-    child: Text(
-      texto,
-      style: const TextStyle(color: AppColors.muted, fontSize: 13),
-    ),
-  );
 }
 
-// ─── Inicio ─────────────────────────────────────────────────────────────
+// ─── Inicio del reclutador ──────────────────────────────────────────────
 
-/// Resumen al entrar. Candidatos y reclutadores ven tarjetas distintas.
+/// Resumen del reclutador. Queda fuera del rediseño del candidato: solo usa
+/// los componentes del sistema para que encaje con el tema.
 ///
-/// TODO: sustituir los valores fijos ("0") por datos reales:
-///   - candidato: GET /postulaciones/mias (cuántas lleva) y
-///     GET /preferencias-autopilot (si el autopiloto está activo).
-///   - reclutador: GET /ofertas/mias (cuántas tiene abiertas).
+/// TODO: sustituir los valores fijos ("0") por GET /ofertas/mias y los
+/// candidatos recibidos.
 class _InicioTab extends StatelessWidget {
-  const _InicioTab({
-    required this.usuario,
-    required this.esCandidato,
-    required this.onIrAPestana,
-    required this.entrevistas,
-    required this.onMostrarNotificaciones,
-  });
+  const _InicioTab({required this.usuario, required this.onIrAPestana});
 
   final Map<String, dynamic> usuario;
-  final bool esCandidato;
-  final List<Map<String, dynamic>> entrevistas;
-  final VoidCallback onMostrarNotificaciones;
 
-  /// Las acciones rápidas saltan a otra pestaña del NavigationBar en vez de
-  /// duplicar su contenido aquí.
+  /// Las filas saltan a otra pestaña de la barra en vez de duplicar su
+  /// contenido aquí.
   final void Function(int indice) onIrAPestana;
 
   @override
-  Widget build(BuildContext context) {
-    final esquema = Theme.of(context).colorScheme;
-
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: esquema.primaryContainer,
-                child: Text(
-                  (usuario['nombre'] as String).substring(0, 1).toUpperCase(),
-                  style: TextStyle(
-                    color: esquema.onPrimaryContainer,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Hola, ${usuario['nombre']}',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              IconButton(
-                tooltip: esCandidato ? 'Notificaciones' : null,
-                onPressed: esCandidato ? onMostrarNotificaciones : null,
-                icon: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Icons.notifications_none),
-                    if (entrevistas.isNotEmpty)
-                      Positioned(
-                        top: -7,
-                        right: -8,
-                        child: Container(
-                          constraints: const BoxConstraints(
-                            minWidth: 18,
-                            minHeight: 18,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          decoration: BoxDecoration(
-                            color: esquema.error,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            entrevistas.length > 9
-                                ? '9+'
-                                : '${entrevistas.length}',
-                            style: TextStyle(
-                              color: esquema.onError,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                style: IconButton.styleFrom(
-                  backgroundColor: esquema.surfaceContainerHighest,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            esCandidato
-                ? 'Esto es lo que está pasando con tu búsqueda'
-                : 'Esto es lo que está pasando con tus ofertas',
-            style: TextStyle(color: esquema.onSurfaceVariant),
-          ),
-          const SizedBox(height: 20),
-          // Tarjeta "hero" tonal: fondo primaryContainer, el patrón de
-          // Material You para destacar el dato más importante de la
-          // pantalla (aquí, sin el degradado ni el cristal de antes).
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppColors.primary, AppColors.primaryLight],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: esquema.primary.withValues(alpha: .22),
-                  blurRadius: 24,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    esCandidato
-                        ? 'Postulaciones activas'
-                        : 'Ofertas publicadas',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.82),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '0',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Accesos rápidos, como "Buscar / Crear / Compartir" en la
-          // pantalla principal de Google Fotos.
-          GlassPanel(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Padding(
-              padding: EdgeInsets.zero,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: esCandidato
-                    ? [
-                        QuickAction(
-                          icono: Icons.search,
-                          etiqueta: 'Ofertas',
-                          onTap: () => onIrAPestana(1),
-                        ),
-                        QuickAction(
-                          icono: Icons.smart_toy_outlined,
-                          etiqueta: 'Autopiloto',
-                          onTap: () => onIrAPestana(2),
-                        ),
-                        QuickAction(
-                          icono: Icons.chat_bubble_outline,
-                          etiqueta: 'Mensajes',
-                          onTap: () => onIrAPestana(3),
-                        ),
-                        QuickAction(
-                          icono: Icons.person_outline,
-                          etiqueta: 'Perfil',
-                          onTap: () => onIrAPestana(4),
-                        ),
-                      ]
-                    : [
-                        QuickAction(
-                          icono: Icons.add_business_outlined,
-                          etiqueta: 'Publicar',
-                          onTap: () => onIrAPestana(1),
-                        ),
-                        QuickAction(
-                          icono: Icons.groups_outlined,
-                          etiqueta: 'Candidatos',
-                          onTap: () => onIrAPestana(1),
-                        ),
-                        QuickAction(
-                          icono: Icons.chat_bubble_outline,
-                          etiqueta: 'Mensajes',
-                          onTap: () => onIrAPestana(2),
-                        ),
-                        QuickAction(
-                          icono: Icons.person_outline,
-                          etiqueta: 'Perfil',
-                          onTap: () => onIrAPestana(3),
-                        ),
-                      ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _tarjetaResumen(
-                  context,
-                  icono: esCandidato ? Icons.send_outlined : Icons.work_outline,
-                  titulo: esCandidato ? 'Postulaciones' : 'Ofertas abiertas',
-                  valor: '0',
-                  onTap: esCandidato
-                      ? () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const MisPostulacionesPage(),
-                          ),
-                        )
-                      : null,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _tarjetaResumen(
-                  context,
-                  icono: esCandidato
-                      ? Icons.smart_toy_outlined
-                      : Icons.groups_outlined,
-                  titulo: esCandidato ? 'Autopiloto' : 'Candidatos',
-                  valor: esCandidato ? 'Inactivo' : '0',
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _tarjetaResumen(
-    BuildContext context, {
-    required IconData icono,
-    required String titulo,
-    required String valor,
-    VoidCallback? onTap,
-  }) {
-    final esquema = Theme.of(context).colorScheme;
-
-    return Card(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icono, color: esquema.primary),
-              const SizedBox(height: 8),
-              Text(
-                valor,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: esquema.onSurface,
-                ),
-              ),
-              Text(
-                titulo,
-                style: TextStyle(fontSize: 12, color: esquema.onSurfaceVariant),
-              ),
-            ],
-          ),
+  Widget build(BuildContext context) => SafeArea(
+    child: ListView(
+      padding: const EdgeInsets.all(AppSpacing.screen),
+      children: [
+        ScreenHeader(
+          title: 'Hola, ${usuario['nombre']}',
+          subtitle: 'Esto es lo que está pasando con tus ofertas',
         ),
-      ),
-    );
-  }
-}
-
-// ─── Mensajes ───────────────────────────────────────────────────────────
-
-// ─── Perfil ─────────────────────────────────────────────────────────────
-
-/// TODO: mover a screens/perfil.dart.
-class _PerfilTab extends StatelessWidget {
-  const _PerfilTab({
-    required this.usuario,
-    required this.rol,
-    required this.onCerrarSesion,
-  });
-
-  final Map<String, dynamic> usuario;
-  final Rol rol;
-  final Future<void> Function() onCerrarSesion;
-
-  @override
-  Widget build(BuildContext context) {
-    final esquema = Theme.of(context).colorScheme;
-
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Center(
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: esquema.primaryContainer,
-                  child: Text(
-                    (usuario['nombre'] as String).substring(0, 1).toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 28,
-                      color: esquema.onPrimaryContainer,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '${usuario['nombre']} ${usuario['apellidos']}',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                Text(
-                  usuario['email'] as String,
-                  style: TextStyle(color: esquema.onSurfaceVariant),
-                ),
-                const SizedBox(height: 8),
-                Chip(label: Text(rol.etiqueta)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          _opcionPerfil(
-            context,
-            icono: Icons.edit_outlined,
-            titulo: 'Editar perfil',
-            onTap: () {
-              // TODO: llevar a la pantalla de editar perfil.
-              // Candidato: PATCH /perfil-candidato/mio (ubicación,
-              // disponibilidad). Reclutador: aún no tiene endpoint propio.
-            },
-          ),
-          if (rol == Rol.candidato)
-            _opcionPerfil(
-              context,
-              icono: Icons.smart_toy_outlined,
-              titulo: 'Autopiloto de postulaciones',
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const AutopilotPage())),
-            ),
-          if (rol == Rol.candidato) ...[
-            _opcionPerfil(
-              context,
-              icono: Icons.send_outlined,
-              titulo: 'Mis candidaturas',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const MisPostulacionesPage()),
-              ),
-            ),
-            _opcionPerfil(
-              context,
-              icono: Icons.description_outlined,
-              titulo: 'Mis currículums',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const MisCvsPage(seleccionable: false),
-                ),
-              ),
-            ),
+        const SizedBox(height: AppSpacing.gap),
+        const KpiGrid(
+          items: [KpiItem('Ofertas abiertas', '0'), KpiItem('Candidatos', '0')],
+        ),
+        const SizedBox(height: AppSpacing.gap),
+        PanelList(
+          children: [
+            ListRow(title: 'Publicar oferta', onTap: () => onIrAPestana(1)),
+            ListRow(title: 'Ver candidatos', onTap: () => onIrAPestana(1)),
+            ListRow(title: 'Mensajes', onTap: () => onIrAPestana(2)),
+            ListRow(title: 'Perfil', onTap: () => onIrAPestana(3)),
           ],
-          const Divider(height: 32),
-          Card(
-            child: ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              leading: Icon(Icons.logout, color: esquema.error),
-              title: Text(
-                'Cerrar sesión',
-                style: TextStyle(
-                  color: esquema.error,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              onTap: onCerrarSesion,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _opcionPerfil(
-    BuildContext context, {
-    required IconData icono,
-    required String titulo,
-    required VoidCallback onTap,
-  }) {
-    final esquema = Theme.of(context).colorScheme;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        leading: CircleAvatar(
-          backgroundColor: esquema.primaryContainer,
-          child: Icon(icono, color: esquema.onPrimaryContainer),
         ),
-        title: Text(
-          titulo,
-          style: const TextStyle(fontWeight: FontWeight.w500),
-        ),
-        trailing: Icon(Icons.chevron_right, color: esquema.onSurfaceVariant),
-        onTap: onTap,
-      ),
-    );
-  }
-}
-
-// ─── Ayuda compartida ───────────────────────────────────────────────────
-
-/// Marcador visual para una sección todavía sin construir. Solo para no
-/// dejar el esqueleto con pantallas en blanco mientras se van rellenando.
-class _MarcadorDeSeccion extends StatelessWidget {
-  const _MarcadorDeSeccion({required this.icono, required this.texto});
-
-  final IconData icono;
-  final String texto;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurfaceVariant;
-
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icono, size: 48, color: color),
-          const SizedBox(height: 12),
-          Text(texto, style: TextStyle(color: color)),
-        ],
-      ),
-    );
-  }
+      ],
+    ),
+  );
 }

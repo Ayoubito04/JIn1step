@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 import { HttpError } from '../../lib/http-error'
 import {
     ejecutarAutopilot,
+    obtenerHistorialAutopilot,
     previsualizarAutopilot,
 } from './postulaciones_autopilot.service'
 
@@ -20,6 +21,19 @@ export async function ejecutar(
     try {
         const usuario = usuarioAutenticado(req)
         res.status(200).json(await ejecutarAutopilot(usuario.id))
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function historial(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+        res.status(200).json(await obtenerHistorialAutopilot(usuario.id))
     } catch (err) {
         next(err)
     }

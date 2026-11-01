@@ -42,6 +42,14 @@ const CON_CV_Y_OFERTA = {
     },
 } as const
 
+//Estados que el reclutador NO ve: la candidatura aún no se ha enviado
+//(PROPUESTA), se descartó (DESCARTADA) o el candidato la retiró (RETIRADA).
+const ESTADOS_OCULTOS_AL_RECLUTADOR = ['PROPUESTA', 'DESCARTADA', 'RETIRADA'] as const
+
+function visibleParaReclutador(estado: string) {
+    return !(ESTADOS_OCULTOS_AL_RECLUTADOR as readonly string[]).includes(estado)
+}
+
 //Comprueba que el CV es de quien dice serlo. Se usa el mismo 404 que si no
 //existiera: un 403 confirmaría que ese id existe y es de otro.
 async function cvDelCandidato(candidatoId: string, cvId: string) {
@@ -96,11 +104,17 @@ export async function crearPostulacion(
             ofertaId: datos.ofertaId,
             cv: { usuarioId: candidatoId },
         },
-        select: { id: true },
+        select: { id: true, estado: true },
     })
 
     if (yaPostulado) {
-        throw new HttpError(409, 'Ya te has postulado a esta oferta')
+        //Una propuesta del autopiloto (o una descartada) no es una candidatura
+        //enviada: si el candidato se postula a mano, toma el control y esa fila
+        //se sustituye por la manual.
+        if (yaPostulado.estado !== 'PROPUESTA' && yaPostulado.estado !== 'DESCARTADA') {
+            throw new HttpError(409, 'Ya te has postulado a esta oferta')
+        }
+        await prisma.postulacion.delete({ where: { id: yaPostulado.id } })
     }
 
     //El score se calcula aquí, nunca llega del cliente
@@ -157,8 +171,9 @@ export async function listarPostulacionesDeOferta(
         throw new HttpError(404, 'Oferta no encontrada')
     }
 
+    //Las retiradas por el candidato no se enseñan al reclutador.
     return prisma.postulacion.findMany({
-        where: { ofertaId },
+        where: { ofertaId, estado: { notIn: [...ESTADOS_OCULTOS_AL_RECLUTADOR] } },
         orderBy: [{ matchScore: 'desc' }, { fechaPostulacion: 'asc' }],
         include: CON_CV_Y_OFERTA,
     })
@@ -172,12 +187,17 @@ export async function obtenerCvDePostulacion(
     const postulacion = await prisma.postulacion.findUnique({
         where: { id: postulacionId },
         select: {
+            estado: true,
             cv: { select: { id: true, titulo: true, contenidoTexto: true } },
             oferta: { select: { reclutadorId: true } },
         },
     })
 
-    if (!postulacion || postulacion.oferta.reclutadorId !== reclutadorId) {
+    if (
+        !postulacion ||
+        !visibleParaReclutador(postulacion.estado) ||
+        postulacion.oferta.reclutadorId !== reclutadorId
+    ) {
         throw new HttpError(404, 'Candidatura no encontrada')
     }
 
@@ -191,12 +211,17 @@ export async function descargarCvDePostulacion(
     const postulacion = await prisma.postulacion.findUnique({
         where: { id: postulacionId },
         select: {
+            estado: true,
             cv: { select: { titulo: true, urlArchivo: true } },
             oferta: { select: { reclutadorId: true } },
         },
     })
 
-    if (!postulacion || postulacion.oferta.reclutadorId !== reclutadorId) {
+    if (
+        !postulacion ||
+        !visibleParaReclutador(postulacion.estado) ||
+        postulacion.oferta.reclutadorId !== reclutadorId
+    ) {
         throw new HttpError(404, 'Candidatura no encontrada')
     }
 
@@ -219,16 +244,146 @@ export async function actualizarEstadoPostulacion(
 ) {
     const postulacion = await prisma.postulacion.findUnique({
         where: { id: postulacionId },
-        select: { id: true, oferta: { select: { reclutadorId: true } } },
+        select: {
+            id: true,
+            estado: true,
+            oferta: { select: { reclutadorId: true } },
+        },
     })
 
-    if (!postulacion || postulacion.oferta.reclutadorId !== reclutadorId) {
+    if (
+        !postulacion ||
+        !visibleParaReclutador(postulacion.estado) ||
+        postulacion.oferta.reclutadorId !== reclutadorId
+    ) {
         throw new HttpError(404, 'Postulación no encontrada')
     }
 
     return prisma.postulacion.update({
         where: { id: postulacionId },
         data: { estado: datos.estado },
+        include: CON_CV_Y_OFERTA,
+    })
+}
+
+//Candidato: decide sobre una propuesta del autopiloto. Solo se puede aprobar o
+//descartar mientras está en PROPUESTA; el 404 es el mismo si no existe o es de
+//otro, para no confirmar que el id existe.
+async function propuestaDelCandidato(candidatoId: string, postulacionId: string) {
+    const postulacion = await prisma.postulacion.findFirst({
+        where: { id: postulacionId, cv: { usuarioId: candidatoId } },
+        select: {
+            id: true,
+            estado: true,
+            oferta: {
+                select: { estado: true, _count: { select: { requisitos: true } } },
+            },
+        },
+    })
+
+    if (!postulacion) {
+        throw new HttpError(404, 'Candidatura no encontrada')
+    }
+    if (postulacion.estado !== 'PROPUESTA') {
+        throw new HttpError(409, 'Esta candidatura ya no es una propuesta pendiente')
+    }
+    return postulacion
+}
+
+//Aprobar = enviar. Se vuelve a comprobar la oferta: puede haberse cerrado
+//desde que el autopiloto la propuso. Si ya no admite candidaturas, la propuesta
+//se descarta en el acto para que no se quede colgada.
+export async function aprobarPostulacion(candidatoId: string, postulacionId: string) {
+    const postulacion = await propuestaDelCandidato(candidatoId, postulacionId)
+
+    if (postulacion.oferta.estado !== 'ABIERTA' || postulacion.oferta._count.requisitos === 0) {
+        await prisma.postulacion.updateMany({
+            where: { id: postulacion.id, estado: 'PROPUESTA' },
+            data: { estado: 'DESCARTADA' },
+        })
+        throw new HttpError(409, 'Esta oferta ya no admite candidaturas')
+    }
+
+    //El estado va en el where: si dos peticiones aprueban a la vez, solo una gana.
+    const { count } = await prisma.postulacion.updateMany({
+        where: { id: postulacion.id, estado: 'PROPUESTA' },
+        data: { estado: 'ENVIADA' },
+    })
+    if (count === 0) {
+        throw new HttpError(409, 'Esta candidatura ya no es una propuesta pendiente')
+    }
+
+    return prisma.postulacion.findUniqueOrThrow({
+        where: { id: postulacion.id },
+        include: CON_CV_Y_OFERTA,
+    })
+}
+
+export async function descartarPostulacion(candidatoId: string, postulacionId: string) {
+    const postulacion = await propuestaDelCandidato(candidatoId, postulacionId)
+
+    await prisma.postulacion.updateMany({
+        where: { id: postulacion.id, estado: 'PROPUESTA' },
+        data: { estado: 'DESCARTADA' },
+    })
+
+    return prisma.postulacion.findUniqueOrThrow({
+        where: { id: postulacion.id },
+        include: CON_CV_Y_OFERTA,
+    })
+}
+
+//El candidato retira su propia candidatura (manual o del autopiloto). No se
+//borra: la fila RETIRADA es lo que impide que el autopiloto vuelva a postular
+//a esa oferta, porque descarta las ofertas con cualquier postulación previa.
+//Solo se puede retirar mientras la empresa no la haya revisado.
+export async function retirarPostulacion(
+    candidatoId: string,
+    postulacionId: string,
+) {
+    const postulacion = await prisma.postulacion.findFirst({
+        where: { id: postulacionId, cv: { usuarioId: candidatoId } },
+        select: { id: true, estado: true },
+    })
+
+    //Mismo 404 si no existe o es de otro, para no confirmar que el id existe.
+    if (!postulacion) {
+        throw new HttpError(404, 'Candidatura no encontrada')
+    }
+
+    if (postulacion.estado === 'RETIRADA') {
+        return prisma.postulacion.findUniqueOrThrow({
+            where: { id: postulacion.id },
+            include: CON_CV_Y_OFERTA,
+        })
+    }
+
+    if (postulacion.estado !== 'PENDIENTE' && postulacion.estado !== 'ENVIADA') {
+        throw new HttpError(
+            409,
+            'Solo puedes retirar candidaturas que la empresa aún no ha revisado',
+        )
+    }
+
+    //updateMany con el estado en el where: si el reclutador la marca como vista
+    //justo ahora, no la pisamos.
+    const { count } = await prisma.postulacion.updateMany({
+        where: {
+            id: postulacion.id,
+            estado: { in: ['PENDIENTE', 'ENVIADA'] },
+        },
+        data: { estado: 'RETIRADA' },
+    })
+
+    if (count === 0) {
+        throw new HttpError(
+            409,
+            'Solo puedes retirar candidaturas que la empresa aún no ha revisado',
+        )
+    }
+
+    return prisma.postulacion.findUniqueOrThrow({
+        where: { id: postulacion.id },
         include: CON_CV_Y_OFERTA,
     })
 }

@@ -116,6 +116,24 @@ export async function obtenerCv(usuarioId: string, cvId: string) {
     return cv
 }
 
+//El PDF original de un CV propio, para previsualizarlo en la app. Mismo 404 que
+//obtenerCv si no existe o es de otro usuario.
+export async function leerArchivoDeCv(usuarioId: string, cvId: string) {
+    const cv = await obtenerCv(usuarioId, cvId)
+
+    try {
+        const archivo = await fs.readFile(
+            path.join(CARPETA_SUBIDAS, path.basename(cv.urlArchivo)),
+        )
+        return { titulo: cv.titulo, archivo }
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            throw new HttpError(404, 'El archivo del CV ya no está disponible')
+        }
+        throw error
+    }
+}
+
 export async function borrarCv(usuarioId: string, cvId: string) {
     const cv = await obtenerCv(usuarioId, cvId)
 

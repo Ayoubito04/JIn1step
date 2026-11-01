@@ -1,16 +1,120 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_theme.dart';
 import '../services/candidato.service.dart';
 import '../services/chat.service.dart';
+import '../widgets/design_system.dart';
 import 'mensajes.dart';
 import 'mis_cvs.dart';
 
+/// Texto visible de la modalidad (los valores reales son los del enum del
+/// backend: REMOTO, HIBRIDO, PRESENCIAL).
+String etiquetaModalidad(String valor) => switch (valor) {
+  'REMOTO' => 'Remoto',
+  'HIBRIDO' => 'Híbrido',
+  'PRESENCIAL' => 'Presencial',
+  _ => valor,
+};
+
+/// Resultado de cruzar los requisitos de una oferta con las habilidades del
+/// CV principal. Lo comparten el listado y el detalle para que ambos muestren
+/// exactamente las mismas cifras.
+class MatchOferta {
+  const MatchOferta({
+    required this.score,
+    required this.obligatoriasCubiertas,
+    required this.obligatoriasTotal,
+    required this.deseablesCubiertas,
+    required this.deseablesTotal,
+    required this.cubiertos,
+    required this.faltantes,
+  });
+
+  final int score;
+  final int obligatoriasCubiertas;
+  final int obligatoriasTotal;
+  final int deseablesCubiertas;
+  final int deseablesTotal;
+
+  /// Nombres de los requisitos que el CV ya cubre (obligatorios primero).
+  final List<String> cubiertos;
+
+  /// Requisitos que faltan (obligatorios primero).
+  final List<({String nombre, bool obligatorio})> faltantes;
+
+  static String normalizar(String nombre) =>
+      nombre.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  /// Habilidades (normalizadas) del CV principal. Lanza si la API falla.
+  static Future<Set<String>> cargarHabilidadesCv(
+    CandidatoService service,
+  ) async {
+    final cvs = await service.listarCvs();
+    if (cvs.isEmpty) return <String>{};
+    final habilidades = await service.listarHabilidadesCv(
+      cvs.first['id'] as String,
+    );
+    return habilidades
+        .map((item) => (item['habilidad'] as Map<String, dynamic>?)?['nombre'])
+        .whereType<String>()
+        .map(normalizar)
+        .toSet();
+  }
+
+  factory MatchOferta.calcular(
+    Map<String, dynamic> oferta,
+    Set<String> habilidadesCv,
+  ) {
+    final requisitos = (oferta['requisitos'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    String? nombreDe(Map<String, dynamic> r) =>
+        (r['habilidad'] as Map<String, dynamic>?)?['nombre'] as String?;
+    final obligatorias = requisitos.where((r) => r['obligatorio'] != false);
+    final deseables = requisitos.where((r) => r['obligatorio'] == false);
+
+    final cubiertos = <String>[];
+    final faltantes = <({String nombre, bool obligatorio})>[];
+    int procesar(Iterable<Map<String, dynamic>> lista, bool obligatorio) {
+      var cubiertas = 0;
+      for (final requisito in lista) {
+        final nombre = nombreDe(requisito);
+        if (nombre == null) continue;
+        if (habilidadesCv.contains(normalizar(nombre))) {
+          cubiertas++;
+          cubiertos.add(nombre);
+        } else {
+          faltantes.add((nombre: nombre, obligatorio: obligatorio));
+        }
+      }
+      return cubiertas;
+    }
+
+    final cubiertasO = procesar(obligatorias, true);
+    final cubiertasD = procesar(deseables, false);
+    final totalO = obligatorias.length, totalD = deseables.length;
+    final ratioO = totalO == 0 ? 1.0 : cubiertasO / totalO;
+    final ratioD = totalD == 0 ? 1.0 : cubiertasD / totalD;
+    return MatchOferta(
+      score: totalO + totalD == 0 ? 0 : (ratioO * 70 + ratioD * 30).round(),
+      obligatoriasCubiertas: cubiertasO,
+      obligatoriasTotal: totalO,
+      deseablesCubiertas: cubiertasD,
+      deseablesTotal: totalD,
+      cubiertos: cubiertos,
+      faltantes: faltantes,
+    );
+  }
+}
+
 class OfertaDetalle extends StatefulWidget {
-  const OfertaDetalle({super.key, required this.oferta});
+  const OfertaDetalle({super.key, required this.oferta, this.habilidadesCv});
 
   final Map<String, dynamic> oferta;
+
+  /// Habilidades normalizadas del CV principal, si el listado ya las tiene.
+  /// Si es null, el detalle las carga por su cuenta.
+  final Set<String>? habilidadesCv;
 
   @override
   State<OfertaDetalle> createState() => _OfertaDetalleState();
@@ -22,6 +126,7 @@ class _OfertaDetalleState extends State<OfertaDetalle> {
   bool _cargando = false;
   Map<String, dynamic>? _postulacionExistente;
   String? _error;
+  late Set<String>? _habilidadesCv = widget.habilidadesCv;
 
   String? get _ofertaId => widget.oferta['id'] as String?;
 
@@ -49,6 +154,17 @@ class _OfertaDetalleState extends State<OfertaDetalle> {
   void initState() {
     super.initState();
     _comprobarPostulacionExistente();
+    if (_habilidadesCv == null) _cargarHabilidadesCv();
+  }
+
+  Future<void> _cargarHabilidadesCv() async {
+    try {
+      final habilidades = await MatchOferta.cargarHabilidadesCv(_service);
+      if (mounted) setState(() => _habilidadesCv = habilidades);
+    } catch (_) {
+      // Sin CV legible se muestra el match con cero habilidades cubiertas.
+      if (mounted) setState(() => _habilidadesCv = <String>{});
+    }
   }
 
   Future<void> _comprobarPostulacionExistente() async {
@@ -89,30 +205,33 @@ class _OfertaDetalleState extends State<OfertaDetalle> {
         if (!mounted) return;
         cvSeleccionado = await showModalBottomSheet<Map<String, dynamic>>(
           context: context,
+          isScrollControlled: true,
           showDragHandle: true,
           builder: (context) => SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screen,
+                AppSpacing.micro,
+                AppSpacing.screen,
+                AppSpacing.screen,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Elige el CV para esta candidatura',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
+                  const SectionTitle('Elegir el CV para esta candidatura'),
+                  const SizedBox(height: AppSpacing.gap),
+                  for (final cv in cvs) ...[
+                    SecondaryButton(
+                      label: cv['titulo'] as String? ?? 'Currículum',
+                      leading: const Icon(Icons.description_outlined, size: 20),
+                      onPressed: () => Navigator.pop(context, cv),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  for (final cv in cvs)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.description_outlined),
-                      title: Text(cv['titulo'] as String? ?? 'Currículum'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () => Navigator.pop(context, cv),
-                    ),
-                  TextButton.icon(
+                    const SizedBox(height: AppSpacing.group),
+                  ],
+                  SecondaryButton(
+                    label: 'Subir otro CV',
+                    leading: const Icon(Icons.add, size: 20),
                     onPressed: () async {
                       final nuevo = await Navigator.of(context)
                           .push<Map<String, dynamic>>(
@@ -124,8 +243,6 @@ class _OfertaDetalleState extends State<OfertaDetalle> {
                         Navigator.pop(context, nuevo);
                       }
                     },
-                    icon: const Icon(Icons.add),
-                    label: const Text('Subir otro CV'),
                   ),
                 ],
               ),
@@ -153,233 +270,212 @@ class _OfertaDetalleState extends State<OfertaDetalle> {
 
   @override
   Widget build(BuildContext context) {
-    final tema = Theme.of(context);
-    final esquema = tema.colorScheme;
     final oferta = widget.oferta;
     final empresa = oferta['empresa'] as Map<String, dynamic>?;
     final titulo = oferta['titulo'] as String? ?? 'Oferta';
     final nombreEmpresa = empresa?['nombre'] as String?;
-    final sitioWeb = empresa?['sitioWeb'] as String?;
-    final requisitos = (oferta['requisitos'] as List?)
-            ?.whereType<Map<String, dynamic>>()
-            .toList() ??
-        const <Map<String, dynamic>>[];
-    final ubicacion = empresa?['ubicacion'] as String?;
     final modalidad = oferta['modalidad'] as String?;
-    final descripcion = oferta['descripcion'] as String? ?? 'Sin descripción';
+    final subtitulo = [
+      ?nombreEmpresa,
+      if (modalidad != null) etiquetaModalidad(modalidad),
+    ].join(' · ');
+    final hayRequisitos = (oferta['requisitos'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .isNotEmpty;
     final estaAbierta =
         oferta['estado'] == null || oferta['estado'] == 'ABIERTA';
     final yaPostulada = _postulacionExistente != null;
+    final habilidades = _habilidadesCv;
+    final match = habilidades == null
+        ? null
+        : MatchOferta.calcular(oferta, habilidades);
+
+    final puedePostular =
+        !_cargando && !yaPostulada && estaAbierta && hayRequisitos;
+    final etiquetaPostular = yaPostulada
+        ? 'Ya te has postulado'
+        : !hayRequisitos
+        ? 'Pendiente de requisitos'
+        : !estaAbierta
+        ? 'Oferta cerrada'
+        : 'Postular con mi CV';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Detalle de la oferta')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [esquema.primary, const Color(0xFF8177F4)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(28),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: .18),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Icon(
-                    Icons.business_outlined,
-                    color: Colors.white,
-                    size: 28,
-                  ),
-                ),
-                const SizedBox(height: 22),
-                Text(
-                  titulo,
-                  style: tema.textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (nombreEmpresa != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    nombreEmpresa,
-                    style: tema.textTheme.titleMedium?.copyWith(
-                      color: Colors.white.withValues(alpha: .86),
-                    ),
-                  ),
-                ],
-                if (sitioWeb != null && sitioWeb.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(foregroundColor: Colors.white),
-                    onPressed: () => launchUrl(Uri.parse(sitioWeb)),
-                    icon: const Icon(Icons.open_in_new, size: 17),
-                    label: Text(sitioWeb, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          GlassPanel(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-            child: Wrap(
-              spacing: 18,
-              runSpacing: 14,
-              children: [
-                if (ubicacion != null)
-                  _dato(context, Icons.location_on_outlined, ubicacion),
-                if (modalidad != null)
-                  _dato(
-                    context,
-                    Icons.work_outline,
-                    _etiquetaModalidad(modalidad),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 26),
-          Text(
-            'Sobre el puesto',
-            style: tema.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            descripcion,
-            style: tema.textTheme.bodyLarge?.copyWith(
-              height: 1.65,
-              color: esquema.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Requisitos del puesto',
-            style: tema.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 10),
-          if (requisitos.isEmpty)
-            const GlassPanel(
-              child: Text('Esta oferta todavía no tiene requisitos definidos.'),
-            )
-          else
-            GlassPanel(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Column(
-                children: [
-                  for (final requisito in requisitos)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(
-                        requisito['obligatorio'] == true
-                            ? Icons.check_circle_outline
-                            : Icons.add_circle_outline,
-                        color: esquema.primary,
-                      ),
-                      title: Text(
-                        (requisito['habilidad'] as Map<String, dynamic>?)?['nombre']
-                                as String? ??
-                            'Habilidad',
-                      ),
-                      subtitle: Text(requisito['obligatorio'] == true ? 'Imprescindible' : 'Deseable'),
-                    ),
-                ],
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.screen),
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: AppIconButton(
+                icon: Icons.arrow_back,
+                tooltip: 'Volver a ofertas',
+                onPressed: () => Navigator.of(context).maybePop(),
               ),
             ),
-          const SizedBox(height: 28),
-          if (_error != null) ...[
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: esquema.errorContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                _error!,
-                style: TextStyle(color: esquema.onErrorContainer),
-              ),
+            const SizedBox(height: AppSpacing.gap),
+            ScreenHeader(
+              title: titulo,
+              subtitle: subtitulo.isEmpty ? null : subtitulo,
             ),
-            const SizedBox(height: 12),
-          ],
-          OutlinedButton.icon(
-            onPressed: _contactarReclutador,
-            icon: const Icon(Icons.chat_bubble_outline),
-            label: const Text('Chatear con el reclutador'),
-          ),
-          const SizedBox(height: 10),
-          FilledButton.icon(
-            onPressed: _cargando ||
-                    yaPostulada ||
-                    !estaAbierta ||
-                    requisitos.isEmpty
-                ? null
-                : _postularse,
-            icon: _cargando
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Icon(
-                    yaPostulada
-                        ? Icons.check_circle_outline
-                        : Icons.send_outlined,
-                  ),
-            label: Text(
-              _cargando
-                  ? 'Enviando candidatura…'
-                  : yaPostulada
-                  ? 'Ya te has postulado'
-                  : requisitos.isEmpty
-                  ? 'Pendiente de requisitos'
-                  : estaAbierta
-                  ? 'Postularme a esta oferta'
-                  : 'Oferta cerrada',
-            ),
-          ),
-          if (yaPostulada &&
-              requisitos.isNotEmpty &&
-              _postulacionExistente?['matchScore'] is num) ...[
-            const SizedBox(height: 10),
-            Text(
-              'Compatibilidad: ${(_postulacionExistente!['matchScore'] as num).round()}%',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: esquema.onSurfaceVariant),
+            const SizedBox(height: AppSpacing.gap),
+            if (match == null)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 48),
+                child: Center(child: AppSpinner(size: 24)),
+              )
+            else ...[
+              _bloqueMatch(match),
+              const SizedBox(height: AppSpacing.gap),
+              _requisitos(habilidades!, hayRequisitos),
+            ],
+            const SizedBox(height: AppSpacing.gap),
+            if (_error != null) ...[
+              Notice(message: _error!, variant: StatusVariant.error),
+              const SizedBox(height: AppSpacing.gap),
+            ],
+            if (puedePostular || _cargando)
+              PrimaryButton(
+                label: etiquetaPostular,
+                loading: _cargando,
+                loadingLabel: 'Enviando candidatura…',
+                onPressed: _postularse,
+              )
+            else
+              SecondaryButton(label: etiquetaPostular, onPressed: null),
+            const SizedBox(height: AppSpacing.group),
+            SecondaryButton(
+              label: 'Escribir al reclutador',
+              onPressed: _contactarReclutador,
             ),
           ],
-        ],
+        ),
       ),
     );
   }
 
-  Widget _dato(BuildContext context, IconData icono, String texto) {
-    final esquema = Theme.of(context).colorScheme;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+  /// Match grande con sus pasos y el desglose obligatorias / deseables.
+  Widget _bloqueMatch(MatchOferta match) => Panel(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icono, size: 19, color: esquema.primary),
-        const SizedBox(width: 8),
-        Text(texto, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Semantics(
+          label: 'Match del ${match.score} %',
+          child: ExcludeSemantics(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('${match.score} %', style: AppText.display),
+                const SizedBox(width: AppSpacing.gap),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.micro),
+                  child: Steps(filled: pasosDeMatch(match.score), animar: true),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.group),
+        Text(
+          'de match con tu CV principal. Obligatorias 70 %, deseables 30 %.',
+          style: AppText.mutedBody,
+        ),
+        const SizedBox(height: AppSpacing.gap),
+        const Divider(),
+        _FilaCifra(
+          etiqueta: 'Obligatorias',
+          cubiertas: match.obligatoriasCubiertas,
+          total: match.obligatoriasTotal,
+        ),
+        const Divider(),
+        _FilaCifra(
+          etiqueta: 'Deseables',
+          cubiertas: match.deseablesCubiertas,
+          total: match.deseablesTotal,
+        ),
+      ],
+    ),
+  );
+
+  /// Lista de requisitos en un solo panel: Cubierto / Falta por fila.
+  Widget _requisitos(Set<String> habilidades, bool hayRequisitos) {
+    if (!hayRequisitos) {
+      return SizedBox(
+        width: double.infinity,
+        child: Panel(
+          child: Text(
+            'Esta oferta todavía no tiene requisitos definidos.',
+            style: AppText.mutedBody,
+          ),
+        ),
+      );
+    }
+    final requisitos = (widget.oferta['requisitos'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (r) => (
+            nombre: (r['habilidad'] as Map<String, dynamic>?)?['nombre']
+                as String?,
+            obligatorio: r['obligatorio'] != false,
+          ),
+        )
+        .where((r) => r.nombre != null)
+        .toList()
+      ..sort((a, b) => a.obligatorio == b.obligatorio
+          ? 0
+          : a.obligatorio
+          ? -1
+          : 1);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionTitle('Requisitos'),
+        const SizedBox(height: AppSpacing.group),
+        PanelList(
+          children: [
+            for (final r in requisitos)
+              ListRow(
+                title: r.nombre!,
+                lines: [r.obligatorio ? 'Obligatoria' : 'Deseable'],
+                strongTitle: false,
+                trailing: habilidades.contains(MatchOferta.normalizar(r.nombre!))
+                    ? const StatusTag(
+                        label: 'Cubierto',
+                        variant: StatusVariant.success,
+                      )
+                    : const StatusTag(
+                        label: 'Falta',
+                        variant: StatusVariant.error,
+                      ),
+              ),
+          ],
+        ),
       ],
     );
   }
+}
 
-  String _etiquetaModalidad(String valor) => switch (valor) {
-    'REMOTO' => 'Remoto',
-    'HIBRIDO' => 'Híbrido',
-    'PRESENCIAL' => 'Presencial',
-    _ => valor,
-  };
+/// Fila «Obligatorias · 3 de 4» dentro del panel del match.
+class _FilaCifra extends StatelessWidget {
+  const _FilaCifra({
+    required this.etiqueta,
+    required this.cubiertas,
+    required this.total,
+  });
+
+  final String etiqueta;
+  final int cubiertas;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: AppSpacing.group),
+    child: Row(
+      children: [
+        Expanded(child: Text(etiqueta, style: AppText.body)),
+        const SizedBox(width: AppSpacing.group),
+        Text('$cubiertas de $total', style: AppText.numInline),
+      ],
+    ),
+  );
 }

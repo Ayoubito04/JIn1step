@@ -1,11 +1,19 @@
-import 'dart:math' as math;
+import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../core/api_client.dart';
 import '../core/app_theme.dart';
+import '../core/google_auth_config.dart';
 import '../services/auth.service.dart';
 import '../widgets/brand_logo.dart';
+import '../widgets/design_system.dart';
+import '../widgets/google_sign_in_web_button_stub.dart'
+    if (dart.library.html) '../widgets/google_sign_in_web_button.dart'
+    as google_web;
+import 'login.dart' show GoogleLogoMark, inicializarGoogleSignIn;
 // home.dart NO se importa: se navega con pushNamedAndRemoveUntil('/home', ...),
 // la ruta con nombre que ya registra main.dart, sin referenciar la clase Home.
 
@@ -19,55 +27,137 @@ class RegisterPage extends StatefulWidget {
   State<RegisterPage> createState() => _RegisterPageState();
 }
 
-class _RegisterPageState extends State<RegisterPage>
-    with TickerProviderStateMixin {
+class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
+  // El diseño tiene un único campo "Nombre completo" (nombre y apellidos); al
+  // enviar se separa en nombre + apellidos, que es lo que exige el backend.
   final _nombreCtrl = TextEditingController();
-  final _apellidosCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _confirmarCtrl = TextEditingController();
   late final AuthService _auth = widget.auth ?? AuthService();
-
-  late final AnimationController _entrada = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  );
-  late final AnimationController _sacudida = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 500),
-  );
 
   // Por defecto candidato: es el caso más común, y así el formulario nunca
   // se envía sin rol (el backend lo exige).
   Rol _rol = Rol.candidato;
   bool _cargando = false;
-  bool _verPassword = false;
+  bool _googlePreparado = false;
+  String? _errorGoogle;
+  StreamSubscription<GoogleSignInAuthenticationEvent>? _googleEvents;
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _entrada.forward();
+    unawaited(_prepararGoogle());
+  }
+
+  Future<void> _prepararGoogle() async {
+    if (kIsWeb && googleWebClientId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _errorGoogle =
+              'Falta configurar el ID de cliente web de Google para esta versión web.';
+        });
+      }
+      return;
+    }
+
+    try {
+      await inicializarGoogleSignIn();
+      if (kIsWeb) {
+        _googleEvents = _googleSignIn.authenticationEvents.listen(
+          (evento) {
+            // Solo atiende el evento si el Registro es la pantalla visible.
+            if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+            if (evento is GoogleSignInAuthenticationEventSignIn) {
+              unawaited(
+                _registrarConGoogleToken(evento.user.authentication.idToken),
+              );
+            }
+          },
+          onError: (Object error) {
+            if (mounted) {
+              setState(
+                () => _errorGoogle =
+                    'No se pudo completar el registro con Google.',
+              );
+            }
+          },
+        );
+      }
+      if (mounted) setState(() => _googlePreparado = true);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _errorGoogle =
+              'Google está tardando demasiado o no pudo inicializarse. Comprueba la conexión y la configuración OAuth.',
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
-    _entrada.dispose();
-    _sacudida.dispose();
+    unawaited(_googleEvents?.cancel());
     _nombreCtrl.dispose();
-    _apellidosCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
-    _confirmarCtrl.dispose();
     super.dispose();
   }
 
+  /// Separa "Ana María López" en nombre ("Ana") y apellidos ("María López").
+  (String, String) _separarNombre() {
+    final partes = _nombreCtrl.text.trim().split(RegExp(r'\s+'));
+    return (partes.first, partes.skip(1).join(' '));
+  }
+
+  // Mismos límites que exige el backend, ahora junto a cada campo.
+  String? _validarNombre(String? valor) {
+    final completo = (valor ?? '').trim();
+    if (completo.isEmpty) return 'Introduce tu nombre y apellidos';
+    final partes = completo.split(RegExp(r'\s+'));
+    final nombre = partes.first;
+    final apellidos = partes.skip(1).join(' ');
+    if (apellidos.isEmpty) return 'Escribe tu nombre y apellidos';
+    if (nombre.length > 100) {
+      return 'El nombre admite como máximo 100 caracteres';
+    }
+    if (apellidos.length > 150) {
+      return 'Los apellidos admiten como máximo 150 caracteres';
+    }
+    return null;
+  }
+
+  String? _validarEmail(String? valor) {
+    final email = (valor ?? '').trim();
+    if (email.isEmpty) return 'Introduce tu correo';
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      return 'Ese correo no es válido';
+    }
+    return null;
+  }
+
+  // Los mismos límites que el registerSchema del backend (min 8, max 72).
+  // 72 no es arbitrario: bcrypt ignora todo lo que pase de 72 bytes.
+  String? _validarPassword(String? valor) {
+    final password = valor ?? '';
+    if (password.isEmpty) return 'Introduce una contraseña';
+    if (password.length < 8) {
+      return 'La contraseña necesita mínimo 8 caracteres';
+    }
+    if (password.length > 72) {
+      return 'La contraseña admite como máximo 72 caracteres';
+    }
+    return null;
+  }
+
   Future<void> _registrarse() async {
+    if (_cargando) return;
     FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate()) {
-      _sacudida.forward(from: 0);
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      setState(() => _error = null);
       return;
     }
 
@@ -77,11 +167,10 @@ class _RegisterPageState extends State<RegisterPage>
     });
 
     try {
-      // La confirmación de contraseña NO se manda: solo sirve para cazar
-      // erratas aquí. El schema del backend es .strict() y la rechazaría.
+      final (nombre, apellidos) = _separarNombre();
       final usuario = await _auth.register(
-        _nombreCtrl.text.trim(),
-        _apellidosCtrl.text.trim(),
+        nombre,
+        apellidos,
         _emailCtrl.text.trim(),
         _passwordCtrl.text,
         _rol,
@@ -95,7 +184,66 @@ class _RegisterPageState extends State<RegisterPage>
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = e.mensaje);
-      _sacudida.forward(from: 0);
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  Future<void> _registrarseConGoogle() async {
+    if (_cargando || !_googlePreparado || kIsWeb) return;
+
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+
+    try {
+      final cuenta = await _googleSignIn.authenticate();
+      final token = cuenta.authentication.idToken;
+      if (token == null || token.isEmpty) {
+        throw const ApiException(
+          'Google no devolvió un token de identidad. Revisa la configuración OAuth.',
+        );
+      }
+      final usuario = await _auth.loginConGoogle(token, rol: _rol);
+      if (mounted) _entrarHome(usuario);
+    } on GoogleSignInException catch (e) {
+      if (!mounted || e.code == GoogleSignInExceptionCode.canceled) return;
+      setState(
+        () => _error =
+            'No se pudo registrar con Google. Revisa la huella SHA-1 y el cliente OAuth.',
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.mensaje);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'No se pudo registrar con Google.');
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  Future<void> _registrarConGoogleToken(String? token) async {
+    if (!mounted || _cargando) return;
+    if (token == null || token.isEmpty) {
+      setState(() => _error = 'Google no devolvió un token de identidad.');
+      return;
+    }
+
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+    try {
+      final usuario = await _auth.loginConGoogle(token, rol: _rol);
+      if (mounted) _entrarHome(usuario);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.mensaje);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'No se pudo registrar con Google.');
+      }
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
@@ -110,90 +258,52 @@ class _RegisterPageState extends State<RegisterPage>
     ).pushNamedAndRemoveUntil('/home', (route) => false, arguments: usuario);
   }
 
-  /// Entrada escalonada: mismo efecto que en el login.
-  Widget _aparecer({required double inicio, required Widget child}) {
-    final curva = CurvedAnimation(
-      parent: _entrada,
-      curve: Interval(
-        inicio,
-        math.min(inicio + 0.45, 1.0),
-        curve: Curves.easeOutCubic,
-      ),
-    );
-
-    return FadeTransition(
-      opacity: curva,
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 0.3),
-          end: Offset.zero,
-        ).animate(curva),
-        child: child,
-      ),
-    );
+  void _volverALogin() {
+    if (_cargando) return;
+    // pop y no pushNamed('/login'): se llegó aquí desde el login, así que
+    // basta con volver atrás. Con push se apilarían logins infinitos.
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(context).pushReplacementNamed('/login');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final esquema = Theme.of(context).colorScheme;
-
-    // Sin degradado ni AppBar transparente: fondo plano (scaffoldBackground
-    // del tema) y una AppBar normal, solo para dar la flecha de "volver".
+    // El fondo con líneas lo pone AppBackground (main.dart); el Scaffold es
+    // transparente y solo aporta el Material de los campos y el teclado.
     return Scaffold(
-      appBar: AppBar(backgroundColor: Colors.transparent),
-      body: AuthBackdrop(
-        child: SafeArea(
-          child: Center(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: Column(
-                  children: [
-                    _aparecer(inicio: 0.0, child: const BrandLogo(size: 88)),
-                    const SizedBox(height: 12),
-                    _aparecer(
-                      inicio: 0.08,
-                      child: Text(
-                        'Crea tu cuenta',
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: esquema.onSurface,
-                            ),
-                      ),
+              padding: const EdgeInsets.all(AppSpacing.screen),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: BrandLogo(size: 48),
+                  ),
+                  const SizedBox(height: AppSpacing.gap),
+                  const ScreenHeader(title: 'Crea tu cuenta'),
+                  const SizedBox(height: AppSpacing.gap),
+                  _construirFormulario(),
+                  const SizedBox(height: AppSpacing.gap),
+                  Center(
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: AppSpacing.group,
+                      children: [
+                        Text('¿Ya tienes cuenta?', style: AppText.mutedBody),
+                        LinkAction(label: 'Entrar', onTap: _volverALogin),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    _aparecer(
-                      inicio: 0.13,
-                      child: Text(
-                        'Sube tu CV una vez y deja que el match haga el resto',
-                        style: TextStyle(
-                          fontSize: 15,
-                          color: esquema.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    _construirTarjeta(),
-                    const SizedBox(height: 12),
-                    _aparecer(
-                      inicio: 0.55,
-                      child: TextButton(
-                        // pop y no pushNamed('/login'): se llegó aquí desde el
-                        // login, así que basta con volver atrás. Con push se
-                        // apilarían pantallas de login infinitas.
-                        onPressed: _cargando
-                            ? null
-                            : () => Navigator.pop(context),
-                        child: const Text(
-                          '¿Ya tienes cuenta? Inicia sesión',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -202,70 +312,37 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  Widget _construirTarjeta() {
-    return AnimatedBuilder(
-      animation: _sacudida,
-      builder: (context, child) {
-        final t = _sacudida.value;
-        final desplazamiento = math.sin(t * math.pi * 5) * 14 * (1 - t);
-        return Transform.translate(
-          offset: Offset(desplazamiento, 0),
-          child: child,
-        );
-      },
-      // Card sin decoración extra: elevation, color y bordes redondeados ya
-      // salen de cardTheme (core/app_theme.dart).
-      child: _aparecer(
-        inicio: 0.15,
-        child: GlassPanel(
-          padding: const EdgeInsets.all(26),
-          child: Padding(
-            padding: EdgeInsets.zero,
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _aparecer(inicio: 0.22, child: _selectorRol()),
-                  const SizedBox(height: 20),
-                  _aparecer(
-                    inicio: 0.28,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: _campoTexto(
-                            controller: _nombreCtrl,
-                            etiqueta: 'Nombre',
-                            icono: Icons.person_outline,
-                            autofill: AutofillHints.givenName,
-                            maximo: 100,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _campoTexto(
-                            controller: _apellidosCtrl,
-                            etiqueta: 'Apellidos',
-                            autofill: AutofillHints.familyName,
-                            maximo: 150,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _aparecer(inicio: 0.34, child: _campoEmail()),
-                  const SizedBox(height: 16),
-                  _aparecer(inicio: 0.40, child: _campoPassword()),
-                  const SizedBox(height: 16),
-                  _aparecer(inicio: 0.46, child: _campoConfirmar()),
-                  _construirError(),
-                  const SizedBox(height: 24),
-                  _aparecer(inicio: 0.5, child: _botonCrear()),
-                ],
+  Widget _construirFormulario() {
+    final mensajeError = _error ?? (!kIsWeb ? _errorGoogle : null);
+
+    return Panel(
+      child: AutofillGroup(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _selectorRol(),
+              const SizedBox(height: AppSpacing.gap),
+              _campoNombre(),
+              const SizedBox(height: AppSpacing.gap),
+              _campoEmail(),
+              const SizedBox(height: AppSpacing.gap),
+              _campoPassword(),
+              if (mensajeError != null) ...[
+                const SizedBox(height: AppSpacing.gap),
+                Notice(message: mensajeError, variant: StatusVariant.error),
+              ],
+              const SizedBox(height: AppSpacing.gap),
+              PrimaryButton(
+                label: 'Crear cuenta',
+                loading: _cargando,
+                loadingLabel: 'Creando cuenta…',
+                onPressed: _registrarse,
               ),
-            ),
+              const SizedBox(height: AppSpacing.group),
+              _botonGoogle(),
+            ],
           ),
         ),
       ),
@@ -273,194 +350,105 @@ class _RegisterPageState extends State<RegisterPage>
   }
 
   Widget _selectorRol() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Soy', style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: 8),
-        // Se construye a partir de Rol.values: si mañana se añade un rol al
-        // enum, aparece aquí sin tocar esta pantalla.
-        SegmentedButton<Rol>(
-          segments: [
-            for (final rol in Rol.values)
-              ButtonSegment<Rol>(
-                value: rol,
-                label: Text(rol.etiqueta),
-                icon: Icon(
-                  rol == Rol.candidato
-                      ? Icons.person_search_outlined
-                      : Icons.business_center_outlined,
-                ),
-              ),
-          ],
-          selected: {_rol},
-          onSelectionChanged: _cargando
-              ? null
-              : (seleccion) => setState(() => _rol = seleccion.first),
-        ),
-      ],
+    // Se construye a partir de Rol.values: si mañana se añade un rol al
+    // enum, aparece aquí sin tocar esta pantalla.
+    return Semantics(
+      container: true,
+      label: 'Soy',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Soy', style: AppText.label),
+          for (final rol in Rol.values)
+            AppRadioRow(
+              label: switch (rol) {
+                Rol.candidato => 'Candidato/a',
+                Rol.reclutador => 'Reclutador/a',
+              },
+              selected: rol == _rol,
+              onTap: () {
+                if (!_cargando) setState(() => _rol = rol);
+              },
+            ),
+        ],
+      ),
     );
   }
 
-  /// Campo de texto obligatorio. Los límites de longitud son los mismos que
-  /// exige el backend, para avisar antes de mandar la petición.
-  Widget _campoTexto({
-    required TextEditingController controller,
-    required String etiqueta,
-    required String autofill,
-    required int maximo,
-    IconData? icono,
-  }) {
-    return TextFormField(
-      controller: controller,
+  Widget _campoNombre() {
+    return AppTextField(
+      controller: _nombreCtrl,
       enabled: !_cargando,
-      textCapitalization: TextCapitalization.words,
       textInputAction: TextInputAction.next,
-      autofillHints: [autofill],
-      decoration: InputDecoration(
-        labelText: etiqueta,
-        prefixIcon: icono == null ? null : Icon(icono),
-      ),
-      validator: (valor) {
-        final texto = valor?.trim() ?? '';
-        if (texto.isEmpty) return 'Obligatorio';
-        if (texto.length > maximo) return 'Máximo $maximo caracteres';
-        return null;
-      },
+      autofillHints: const [AutofillHints.name],
+      validator: _validarNombre,
+      label: 'Nombre completo',
+      hint: 'Ana López Pérez',
     );
   }
 
   Widget _campoEmail() {
-    return TextFormField(
+    return AppTextField(
       controller: _emailCtrl,
       enabled: !_cargando,
       keyboardType: TextInputType.emailAddress,
       autocorrect: false,
       textInputAction: TextInputAction.next,
       autofillHints: const [AutofillHints.email],
-      decoration: const InputDecoration(
-        labelText: 'Correo electrónico',
-        prefixIcon: Icon(Icons.email_outlined),
-      ),
-      validator: (valor) {
-        final email = valor?.trim() ?? '';
-        if (email.isEmpty) return 'Introduce tu email';
-        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-          return 'Ese email no es válido';
-        }
-        return null;
-      },
+      validator: _validarEmail,
+      label: 'Correo',
+      hint: 'nombre@correo.com',
     );
   }
 
   Widget _campoPassword() {
-    return TextFormField(
+    return AppTextField(
       controller: _passwordCtrl,
       enabled: !_cargando,
-      obscureText: !_verPassword,
-      textInputAction: TextInputAction.next,
-      autofillHints: const [AutofillHints.newPassword],
-      decoration: InputDecoration(
-        labelText: 'Contraseña',
-        helperText: 'Entre 8 y 72 caracteres',
-        prefixIcon: const Icon(Icons.lock_outline),
-        suffixIcon: IconButton(
-          tooltip: _verPassword ? 'Ocultar contraseña' : 'Mostrar contraseña',
-          icon: Icon(
-            _verPassword
-                ? Icons.visibility_off_outlined
-                : Icons.visibility_outlined,
-          ),
-          onPressed: () => setState(() => _verPassword = !_verPassword),
-        ),
-      ),
-      // Los mismos límites que el registerSchema del backend (min 8, max 72).
-      // 72 no es arbitrario: bcrypt ignora todo lo que pase de 72 bytes.
-      validator: (valor) {
-        final password = valor ?? '';
-        if (password.isEmpty) return 'Introduce una contraseña';
-        if (password.length < 8) return 'Mínimo 8 caracteres';
-        if (password.length > 72) return 'Máximo 72 caracteres';
-        return null;
-      },
-    );
-  }
-
-  Widget _campoConfirmar() {
-    return TextFormField(
-      controller: _confirmarCtrl,
-      enabled: !_cargando,
-      obscureText: !_verPassword,
+      obscureText: true,
       textInputAction: TextInputAction.done,
-      onFieldSubmitted: (_) => _registrarse(),
-      decoration: const InputDecoration(
-        labelText: 'Repite la contraseña',
-        prefixIcon: Icon(Icons.lock_reset_outlined),
-      ),
-      validator: (valor) =>
-          valor != _passwordCtrl.text ? 'Las contraseñas no coinciden' : null,
+      autofillHints: const [AutofillHints.newPassword],
+      validator: _validarPassword,
+      onSubmitted: (_) => _registrarse(),
+      label: 'Contraseña',
     );
   }
 
-  Widget _construirError() {
-    final esquema = Theme.of(context).colorScheme;
-
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-      child: _error == null
-          ? const SizedBox(width: double.infinity)
-          : Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 16),
-              padding: const EdgeInsets.all(12),
-              // errorContainer/onErrorContainer: el par de colores que
-              // Material 3 reserva para avisos de error.
-              decoration: BoxDecoration(
-                color: esquema.errorContainer,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.error_outline, color: esquema.onErrorContainer),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _error!,
-                      style: TextStyle(color: esquema.onErrorContainer),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-    );
-  }
-
-  Widget _botonCrear() {
-    return SizedBox(
-      height: 52,
-      // FilledButton: la acción principal en Material 3 (filledButtonTheme
-      // en core/app_theme.dart le da el redondeo y el tamaño).
-      child: FilledButton(
-        onPressed: _cargando ? null : _registrarse,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: _cargando
-              ? SizedBox(
-                  key: const ValueKey('cargando'),
-                  width: 24,
-                  height: 24,
-                  // Color explícito onPrimary: sin él, el spinner toma el
-                  // primary del tema y se vuelve invisible sobre el fondo
-                  // (también primary) del FilledButton.
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                )
-              : const Text('Crear cuenta', key: ValueKey('texto')),
+  Widget _botonGoogle() {
+    if (kIsWeb) {
+      if (googleWebClientId.isEmpty) {
+        return Text(
+          _errorGoogle ??
+              'Google estará disponible al configurar el cliente web.',
+          textAlign: TextAlign.center,
+          style: AppText.meta,
+        );
+      }
+      if (_errorGoogle != null) {
+        return Notice(message: _errorGoogle!, variant: StatusVariant.error);
+      }
+      if (!_googlePreparado) {
+        return const SizedBox(
+          height: AppSpacing.field,
+          child: Center(child: AppSpinner()),
+        );
+      }
+      return Center(
+        child: SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: IgnorePointer(
+            ignoring: _cargando,
+            child: google_web.buildGoogleSignInWebButton(),
+          ),
         ),
-      ),
+      );
+    }
+
+    return SecondaryButton(
+      label: 'Registrarme con Google',
+      leading: const GoogleLogoMark(),
+      onPressed: _registrarseConGoogle,
     );
   }
 }
