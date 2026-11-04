@@ -14,7 +14,7 @@ class ChatService {
     try {
       final response = await ApiClient.dio.post('/conversaciones', data: {
         'usuarioId': usuarioId,
-        if (ofertaId != null) 'ofertaId': ofertaId,
+        'ofertaId': ?ofertaId,
       });
       return response.data as Map<String, dynamic>;
     } catch (error) {
@@ -26,6 +26,19 @@ class ChatService {
     try {
       final response = await ApiClient.dio.get('/conversaciones/$conversacionId/mensajes');
       return (response.data as List).cast<Map<String, dynamic>>();
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  Future<int> contarSinLeer() async {
+    try {
+      final response = await ApiClient.dio.get('/mensajes/sin-leer');
+      final data = response.data;
+      if (data is Map<String, dynamic>) {
+        return (data['sinLeer'] as num?)?.toInt() ?? 0;
+      }
+      return 0;
     } catch (error) {
       throw ApiClient.traducirError(error);
     }

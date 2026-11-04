@@ -19,13 +19,28 @@ const CON_CV_Y_OFERTA = {
         select: {
             id: true,
             titulo: true,
-            usuario: { select: { id: true, nombre: true, apellidos: true } },
+            usuario: {
+                select: {
+                    id: true,
+                    nombre: true,
+                    apellidos: true,
+                    candidatoPerfil: {
+                        select: {
+                            ubicacion: true,
+                            disponibilidad: true,
+                            expectativaSalarial: true,
+                            banner: true,
+                        },
+                    },
+                },
+            },
         },
     },
     oferta: {
         select: {
             id: true,
             titulo: true,
+            salario: true,
             modalidad: true,
             estado: true,
             reclutadorId: true,

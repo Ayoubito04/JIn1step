@@ -20,6 +20,7 @@ class _PublicarOfertaState extends State<PublicarOferta> {
   final _formKey = GlobalKey<FormState>();
   final _tituloCtrl = TextEditingController();
   final _descripcionCtrl = TextEditingController();
+  final _salarioCtrl = TextEditingController();
 
   late final OfertasService _ofertasService =
       widget.ofertasService ?? OfertasService();
@@ -41,6 +42,7 @@ class _PublicarOfertaState extends State<PublicarOferta> {
   void dispose() {
     _tituloCtrl.dispose();
     _descripcionCtrl.dispose();
+    _salarioCtrl.dispose();
     super.dispose();
   }
 
@@ -78,6 +80,9 @@ class _PublicarOfertaState extends State<PublicarOferta> {
         empresaId: _empresaId!,
         titulo: _tituloCtrl.text.trim(),
         descripcion: _descripcionCtrl.text.trim(),
+        salario: _salarioCtrl.text.trim().isEmpty
+            ? null
+            : _salarioCtrl.text.trim(),
         modalidad: _modalidad,
         requisitos: [
           for (final entry in _requisitos.entries)
@@ -155,6 +160,20 @@ class _PublicarOfertaState extends State<PublicarOferta> {
                               final text = value?.trim() ?? '';
                               if (text.isEmpty) return 'La descripción es obligatoria';
                               if (text.length > 1000) return 'Máximo 1000 caracteres';
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _salarioCtrl,
+                            enabled: !_publicando,
+                            decoration: const InputDecoration(
+                              labelText: 'Salario ofrecido (ej. 35.000 - 42.000 € brutos/año)',
+                              prefixIcon: Icon(Icons.payments_outlined),
+                            ),
+                            validator: (value) {
+                              final text = value?.trim() ?? '';
+                              if (text.length > 100) return 'Máximo 100 caracteres';
                               return null;
                             },
                           ),

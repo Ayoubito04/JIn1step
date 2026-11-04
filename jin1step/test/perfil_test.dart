@@ -18,6 +18,8 @@ class ServicioFalso extends CandidatoService {
   ServicioFalso({
     this.ubicacion,
     this.disponibilidad,
+    this.expectativaSalarial,
+    this.banner,
     this.suscripcion,
     this.falloAlCargar = false,
     this.falloAlGuardar,
@@ -25,6 +27,8 @@ class ServicioFalso extends CandidatoService {
 
   String? ubicacion;
   String? disponibilidad;
+  int? expectativaSalarial;
+  String? banner;
   final Map<String, dynamic>? suscripcion;
   final bool falloAlCargar;
   final ApiException? falloAlGuardar;
@@ -33,6 +37,8 @@ class ServicioFalso extends CandidatoService {
   int guardados = 0;
   String? ultimaUbicacion;
   String? ultimaDisponibilidad;
+  int? ultimaExpectativaSalarial;
+  String? ultimoBanner;
   int descargas = 0;
   Completer<Uint8List>? descarga;
   ApiException? falloDescarga;
@@ -43,7 +49,12 @@ class ServicioFalso extends CandidatoService {
     if (falloAlCargar && cargas == 1) {
       throw const ApiException('No se puede conectar con el servidor.');
     }
-    return {'ubicacion': ubicacion, 'disponibilidad': disponibilidad};
+    return {
+      'ubicacion': ubicacion,
+      'disponibilidad': disponibilidad,
+      'expectativaSalarial': expectativaSalarial,
+      'banner': banner,
+    };
   }
 
   @override
@@ -53,12 +64,21 @@ class ServicioFalso extends CandidatoService {
   Future<Map<String, dynamic>> guardarMiPerfil({
     required String? ubicacion,
     required String? disponibilidad,
+    int? expectativaSalarial,
+    String? banner,
   }) async {
     guardados++;
     ultimaUbicacion = ubicacion;
     ultimaDisponibilidad = disponibilidad;
+    ultimaExpectativaSalarial = expectativaSalarial;
+    ultimoBanner = banner;
     if (falloAlGuardar != null) throw falloAlGuardar!;
-    return {'ubicacion': ubicacion, 'disponibilidad': disponibilidad};
+    return {
+      'ubicacion': ubicacion,
+      'disponibilidad': disponibilidad,
+      'expectativaSalarial': expectativaSalarial,
+      'banner': banner,
+    };
   }
 
   @override
@@ -118,7 +138,10 @@ void main() {
       expect(find.text('Candidato/a'), findsOneWidget);
       expect(find.text('Ubicación'), findsOneWidget);
       expect(find.text('Disponibilidad'), findsOneWidget);
-      expect(find.text('Sin indicar'), findsNWidgets(2));
+      expect(find.text('Expectativa salarial'), findsOneWidget);
+      expect(find.text('Foto de portada (banner)'), findsOneWidget);
+      expect(find.text('Subir foto de portada'), findsOneWidget);
+      expect(find.text('Sin indicar'), findsNWidgets(3));
       expect(find.text('Sin suscripción'), findsOneWidget);
       expect(find.text('Cerrar sesión'), findsOneWidget);
     });
@@ -127,11 +150,13 @@ void main() {
       final servicio = ServicioFalso(
         ubicacion: 'Bilbao',
         disponibilidad: 'Inmediata',
+        expectativaSalarial: 38000,
         suscripcion: {'tipoPlan': 'ANUAL'},
       );
       await abrir(tester, PerfilPage(usuario: candidato, service: servicio));
-      expect(find.text('Bilbao'), findsOneWidget);
+      expect(find.text('Bilbao'), findsAtLeastNWidgets(1));
       expect(find.text('Inmediata'), findsOneWidget);
+      expect(find.text('38.000 €'), findsOneWidget);
       expect(find.text('Plan anual'), findsOneWidget);
     });
 
@@ -156,7 +181,7 @@ void main() {
       expect(servicio.ultimaUbicacion, 'Madrid');
       expect(servicio.ultimaDisponibilidad, isNull); // vacío = borrar
       expect(find.text('Guardar cambios'), findsNothing);
-      expect(find.text('Madrid'), findsOneWidget);
+      expect(find.text('Madrid'), findsAtLeastNWidgets(1));
       expect(find.text('Perfil actualizado.'), findsOneWidget);
     });
 

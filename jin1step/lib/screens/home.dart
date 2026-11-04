@@ -29,6 +29,7 @@ import 'mis_cvs.dart';
 import 'mensajes.dart';
 import 'mis_ofertas.dart';
 import 'mis_postulaciones.dart';
+import 'oferta_detalle.dart';
 import 'ofertas.dart';
 import 'perfil.dart';
 
@@ -114,15 +115,12 @@ class _HomeState extends State<Home> {
     });
   }
 
-  /// Suma de mensajes sin leer de todas las conversaciones: es el número de
-  /// la insignia de la pestaña Chat (distinto del contador de la campana).
+  /// Contador de mensajes sin leer de todas las conversaciones (`GET /mensajes/sin-leer`):
+  /// es el número de la insignia de la pestaña Chat y de la cifra de Inicio
+  /// (distinto del contador de la campana).
   Future<void> _cargarMensajesSinLeer() async {
     try {
-      final conversaciones = await _chatService.listarConversaciones();
-      final total = conversaciones.fold<int>(
-        0,
-        (suma, chat) => suma + ((chat['sinLeer'] as num?)?.toInt() ?? 0),
-      );
+      final total = await _chatService.contarSinLeer();
       if (mounted && total != _mensajesSinLeer) {
         setState(() => _mensajesSinLeer = total);
       }
@@ -230,52 +228,111 @@ class _HomeState extends State<Home> {
         DateTime.now().difference(fecha) < const Duration(hours: 24);
   }
 
+  void _marcarTodasLeidas() {
+    setState(() {
+      for (final p in _entrevistas) {
+        final id = p['id'];
+        if (id is String) _entrevistasLeidas.add(id);
+      }
+      for (final p in _propuestas) {
+        final id = p['id'];
+        if (id is String) _propuestasLeidas.add(id);
+      }
+      for (final p in _autopilotRecientes) {
+        final id = p['id'];
+        if (id is String) _autopilotLeidas.add(id);
+      }
+    });
+  }
+
   void _mostrarNotificaciones() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.screen),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (context, setPageState) {
+            final noLeidas =
+                _entrevistas
+                    .where(
+                      (p) =>
+                          p['id'] is String &&
+                          !_entrevistasLeidas.contains(p['id']),
+                    )
+                    .length +
+                _autopilotRecientes
+                    .where(
+                      (p) =>
+                          p['id'] is String &&
+                          !_autopilotLeidas.contains(p['id']),
+                    )
+                    .length +
+                _propuestas
+                    .where(
+                      (p) =>
+                          p['id'] is String &&
+                          !_propuestasLeidas.contains(p['id']),
+                    )
+                    .length;
+
+            return Scaffold(
+              body: SafeArea(
+                child: ListView(
+                  padding: const EdgeInsets.all(AppSpacing.screen),
                   children: [
-                    Expanded(
-                      child: Semantics(
-                        header: true,
-                        child: Text('Notificaciones', style: AppText.h1),
-                      ),
+                    Row(
+                      children: [
+                        AppIconButton(
+                          icon: Icons.arrow_back,
+                          tooltip: 'Volver a Inicio',
+                          onPressed: () => Navigator.of(context).maybePop(),
+                        ),
+                        const Spacer(),
+                        AppIconButton(
+                          icon: Icons.refresh,
+                          tooltip: 'Actualizar notificaciones',
+                          onPressed: () async {
+                            await _cargarEntrevistas();
+                            if (context.mounted) setPageState(() {});
+                          },
+                        ),
+                      ],
                     ),
-                    AppIconButton(
-                      icon: Icons.refresh,
-                      tooltip: 'Actualizar notificaciones',
-                      onPressed: () => unawaited(_cargarEntrevistas()),
+                    const SizedBox(height: AppSpacing.gap),
+                    ScreenHeader(
+                      title: 'Notificaciones',
+                      subtitle: noLeidas == 0
+                          ? 'Todo al día'
+                          : _plural(
+                              noLeidas,
+                              'notificación sin leer',
+                              'notificaciones sin leer',
+                            ),
+                      trailing: noLeidas > 0
+                          ? LinkAction(
+                              label: 'Marcar todas como leídas',
+                              onTap: () {
+                                _marcarTodasLeidas();
+                                setPageState(() {});
+                              },
+                            )
+                          : null,
                     ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.gap),
-                if (_notificacionesCargando &&
-                    _entrevistas.isEmpty &&
-                    _propuestas.isEmpty &&
-                    _autopilotRecientes.isEmpty)
-                  const Panel(child: Center(child: AppSpinner(size: 24)))
-                else if (_entrevistas.isEmpty &&
-                    _propuestas.isEmpty &&
-                    _autopilotRecientes.isEmpty)
-                  Panel(
-                    child: Text(
-                      'Todavía no tienes notificaciones.',
-                      style: AppText.mutedBody,
-                    ),
-                  )
-                else
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: PanelList(
+                    const SizedBox(height: AppSpacing.gap),
+                    if (_notificacionesCargando &&
+                        _entrevistas.isEmpty &&
+                        _propuestas.isEmpty &&
+                        _autopilotRecientes.isEmpty)
+                      const Panel(child: Center(child: AppSpinner(size: 24)))
+                    else if (_entrevistas.isEmpty &&
+                        _propuestas.isEmpty &&
+                        _autopilotRecientes.isEmpty)
+                      Panel(
+                        child: Text(
+                          'No tienes notificaciones pendientes. Te avisaremos cuando haya cambios en tus candidaturas.',
+                          style: AppText.mutedBody,
+                        ),
+                      )
+                    else
+                      PanelList(
                         children: [
                           for (final postulacion in _entrevistas)
                             _filaEntrevista(context, postulacion),
@@ -285,13 +342,13 @@ class _HomeState extends State<Home> {
                             _filaAutopilot(context, postulacion),
                         ],
                       ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -310,7 +367,9 @@ class _HomeState extends State<Home> {
         '${empresa['nombre'] ?? 'El reclutador'} te ha seleccionado para una entrevista.',
         'Contacta por el chat para acordar fecha y hora.',
       ],
-      trailing: leida ? null : const StatusTag(label: 'Nueva'),
+      trailing: leida
+          ? const StatusTag(label: 'Leída', variant: StatusVariant.neutral)
+          : const StatusTag(label: 'Nueva', variant: StatusVariant.error),
       onTap: () {
         if (id is String) {
           setState(() => _entrevistasLeidas.add(id));
@@ -341,7 +400,9 @@ class _HomeState extends State<Home> {
         empresa['nombre'] as String? ?? 'Empresa',
         'Revísala y decide si se envía.',
       ],
-      trailing: leida ? null : const StatusTag(label: 'Nueva'),
+      trailing: leida
+          ? const StatusTag(label: 'Leída', variant: StatusVariant.neutral)
+          : const StatusTag(label: 'Nueva', variant: StatusVariant.error),
       onTap: () {
         if (id is String) {
           setState(() => _propuestasLeidas.add(id));
@@ -371,7 +432,9 @@ class _HomeState extends State<Home> {
         'El autopiloto te ha postulado en ${empresa['nombre'] ?? 'una empresa'}.',
         'Puedes revisarla o retirarla si no te interesa.',
       ],
-      trailing: leida ? null : const StatusTag(label: 'Nueva'),
+      trailing: leida
+          ? const StatusTag(label: 'Leída', variant: StatusVariant.neutral)
+          : const StatusTag(label: 'Nueva', variant: StatusVariant.error),
       onTap: () {
         if (id is String) {
           setState(() => _autopilotLeidas.add(id));
@@ -422,6 +485,7 @@ class _HomeState extends State<Home> {
           icono: Icons.home_outlined,
           iconoActivo: Icons.home_outlined,
           pagina: _InicioCandidatoTab(
+            usuario: usuario,
             notificacionesNoLeidas:
                 _entrevistas
                     .where(
@@ -483,7 +547,15 @@ class _HomeState extends State<Home> {
           etiqueta: 'Mi CV',
           icono: Icons.person_outline,
           iconoActivo: Icons.person_outline,
-          pagina: const MisCvsPage(seleccionable: false),
+          pagina: MisCvsPage(
+            seleccionable: false,
+            onVerPerfil: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    PerfilPage(usuario: usuario, mostrarAtras: true),
+              ),
+            ),
+          ),
         ),
       ] else ...[
         _Seccion(
@@ -580,6 +652,7 @@ String _plural(int n, String uno, String varios) =>
 /// datos reales del backend.
 class _InicioCandidatoTab extends StatefulWidget {
   const _InicioCandidatoTab({
+    required this.usuario,
     required this.notificacionesNoLeidas,
     required this.mensajesSinLeer,
     required this.onMostrarNotificaciones,
@@ -588,6 +661,7 @@ class _InicioCandidatoTab extends StatefulWidget {
     required this.onVerPerfil,
   });
 
+  final Map<String, dynamic> usuario;
   final VoidCallback onVerPerfil;
   final int notificacionesNoLeidas;
   final int mensajesSinLeer;
@@ -634,8 +708,13 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
               (item) => (item['habilidad'] as Map<String, dynamic>?)?['nombre'],
             )
             .whereType<String>()
-            .map((nombre) => nombre.trim().toLowerCase())
-            .toSet();
+            .map(MatchOferta.normalizar)
+            .toSet()
+          ..addAll(
+            MatchOferta.extraerTerminosDeTexto(
+              cvs.first['contenidoTexto'] as String?,
+            ),
+          );
       }
       if (!mounted) return;
       setState(() {
@@ -670,28 +749,13 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
 
   int? _match(Map<String, dynamic> oferta) {
     if (_habilidades.isEmpty) return null;
-    final requisitos = (oferta['requisitos'] as List? ?? const [])
-        .whereType<Map<String, dynamic>>();
-    final obligatorias = requisitos
-        .where((r) => r['obligatorio'] != false)
-        .toList();
-    final deseables = requisitos
-        .where((r) => r['obligatorio'] == false)
-        .toList();
-    if (obligatorias.isEmpty && deseables.isEmpty) return null;
-    int cuenta(List<Map<String, dynamic>> items) => items.where((r) {
-      final nombre =
-          (r['habilidad'] as Map<String, dynamic>?)?['nombre'] as String?;
-      return nombre != null &&
-          _habilidades.contains(nombre.trim().toLowerCase());
-    }).length;
-    final ratioO = obligatorias.isEmpty
-        ? 1.0
-        : cuenta(obligatorias) / obligatorias.length;
-    final ratioD = deseables.isEmpty
-        ? 1.0
-        : cuenta(deseables) / deseables.length;
-    return (ratioO * 70 + ratioD * 30).round();
+    final resultado = MatchOferta.calcular(oferta, _habilidades);
+    if (resultado.obligatoriasTotal == 0 &&
+        resultado.deseablesTotal == 0 &&
+        resultado.descripcionTotal == 0) {
+      return null;
+    }
+    return resultado.score;
   }
 
   List<({Map<String, dynamic> oferta, int score})> get _mejores {
@@ -725,7 +789,7 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
           Text(_error!, textAlign: TextAlign.center, style: AppText.meta),
           const SizedBox(height: AppSpacing.gap),
           SecondaryButton(
-            label: 'Reintentar',
+            label: 'Reintentar carga',
             onPressed: () {
               setState(() {
                 _cargando = true;
@@ -760,7 +824,8 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
         ? 'Todo al día. Revisa las ofertas que encajan contigo.'
         : 'Tienes ${partes.join(' y ')}.';
     if (!activo) return principal;
-    return '$principal El autopiloto ha enviado $hoy de $limite candidaturas hoy.';
+    final hoyMostrado = hoy.clamp(0, limite);
+    return '$principal El autopiloto ha enviado $hoyMostrado de $limite candidaturas hoy.';
   }
 
   Widget _contenido() {
@@ -779,6 +844,12 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
     final activo = _preferencias['activo'] == true;
     final matches = _mejores;
 
+    final nombreUsuario = (widget.usuario['nombre'] as String? ?? '').trim();
+    final correoUsuario = widget.usuario['email'] as String? ?? '';
+    final inicialUsuario = nombreUsuario.isEmpty
+        ? 'U'
+        : nombreUsuario[0].toUpperCase();
+
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.screen),
       children: [
@@ -787,10 +858,27 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
             const BrandLogo(size: 40),
             const SizedBox(width: AppSpacing.group),
             Expanded(child: Text('JIn1Step', style: AppText.h2)),
-            AppIconButton(
-              icon: Icons.person_outline,
-              tooltip: 'Ver perfil',
-              onPressed: widget.onVerPerfil,
+            Tooltip(
+              message: 'Editar mi perfil',
+              child: Semantics(
+                button: true,
+                label: 'Editar mi perfil',
+                excludeSemantics: true,
+                child: InkWell(
+                  onTap: widget.onVerPerfil,
+                  customBorder: const CircleBorder(),
+                  child: SizedBox.square(
+                    dimension: AppSpacing.tap,
+                    child: Center(
+                      child: Avatar(
+                        initial: inicialUsuario,
+                        seed: correoUsuario,
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
             const SizedBox(width: AppSpacing.group),
             NotificationBell(
@@ -812,10 +900,26 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
         const SizedBox(height: AppSpacing.gap),
         KpiGrid(
           items: [
-            KpiItem('Candidaturas', '${_postulaciones.length}'),
-            KpiItem('Entrevistas', '$entrevistas'),
-            KpiItem('Pendientes de revisión', '$pendientes'),
-            KpiItem('Mensajes sin leer', '${widget.mensajesSinLeer}'),
+            KpiItem(
+              'Candidaturas',
+              '${_postulaciones.length}',
+              onTap: widget.onVerCandidaturas,
+            ),
+            KpiItem(
+              'Entrevistas',
+              '$entrevistas',
+              onTap: widget.onVerCandidaturas,
+            ),
+            KpiItem(
+              'Pendientes de revisión',
+              '$pendientes',
+              onTap: widget.onVerCandidaturas,
+            ),
+            KpiItem(
+              'Mensajes sin leer',
+              '${widget.mensajesSinLeer}',
+              onTap: () => widget.onIrAPestana(3),
+            ),
           ],
         ),
         LinkAction(
@@ -857,14 +961,22 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
       'PRESENCIAL' => 'Presencial',
       _ => '',
     };
+    final salario = (oferta['salario'] as String?)?.trim() ?? '';
+    final subtitulo = [
+      empresa['nombre'] as String? ?? 'Empresa',
+      if (modalidad.isNotEmpty) modalidad,
+      if (salario.isNotEmpty) salario,
+    ].join(' · ');
     return ListRow(
       title: oferta['titulo'] as String? ?? 'Oferta',
-      lines: [
-        (empresa['nombre'] as String? ?? 'Empresa') +
-            (modalidad.isEmpty ? '' : ' · $modalidad'),
-      ],
+      lines: [subtitulo],
       trailing: MatchIndicator(match: score),
-      onTap: () => widget.onIrAPestana(1),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              OfertaDetalle(oferta: oferta, habilidadesCv: _habilidades),
+        ),
+      ),
     );
   }
 }

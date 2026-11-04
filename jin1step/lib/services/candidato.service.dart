@@ -12,6 +12,8 @@ bool esCandidaturaEnviada(Map<String, dynamic> postulacion) =>
     postulacion['estado'] != 'DESCARTADA';
 
 class CandidatoService {
+  static const _esperaAutopilot = Duration(minutes: 4);
+
   /// Aprueba una propuesta del autopiloto: pasa a enviada.
   Future<Map<String, dynamic>> aprobarPostulacion(String id) async {
     try {
@@ -83,15 +85,65 @@ class CandidatoService {
     }
   }
 
-  /// Guarda ubicación y disponibilidad; `null` borra ese dato.
+  /// Guarda ubicación, disponibilidad y expectativa salarial; `null` borra ese dato.
   Future<Map<String, dynamic>> guardarMiPerfil({
     required String? ubicacion,
     required String? disponibilidad,
+    int? expectativaSalarial,
+    String? banner,
   }) async {
     try {
       final respuesta = await ApiClient.dio.patch(
         '/perfil-candidato/mio',
-        data: {'ubicacion': ubicacion, 'disponibilidad': disponibilidad},
+        data: {
+          'ubicacion': ubicacion,
+          'disponibilidad': disponibilidad,
+          'expectativaSalarial': expectativaSalarial,
+          'banner': ?banner,
+        },
+      );
+      return respuesta.data as Map<String, dynamic>;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  /// Sube una imagen (JPG, PNG, WEBP o GIF) como foto de portada (banner) del perfil.
+  Future<Map<String, dynamic>> subirBannerPerfil({
+    required String nombreArchivo,
+    required List<int> bytes,
+  }) async {
+    try {
+      final ext = nombreArchivo.toLowerCase();
+      final mime = ext.endsWith('.png')
+          ? 'image/png'
+          : ext.endsWith('.webp')
+          ? 'image/webp'
+          : ext.endsWith('.gif')
+          ? 'image/gif'
+          : 'image/jpeg';
+      final datos = FormData.fromMap({
+        'archivo': MultipartFile.fromBytes(
+          bytes,
+          filename: nombreArchivo,
+          contentType: DioMediaType.parse(mime),
+        ),
+      });
+      final respuesta = await ApiClient.dio.post(
+        '/perfil-candidato/mio/banner',
+        data: datos,
+      );
+      return respuesta.data as Map<String, dynamic>;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  /// Elimina la foto de portada (banner) del perfil del candidato.
+  Future<Map<String, dynamic>> borrarBannerPerfil() async {
+    try {
+      final respuesta = await ApiClient.dio.delete(
+        '/perfil-candidato/mio/banner',
       );
       return respuesta.data as Map<String, dynamic>;
     } catch (error) {
@@ -238,8 +290,17 @@ class CandidatoService {
     try {
       final respuesta = await ApiClient.dio.post(
         '/postulaciones-autopilot/ejecutar',
+        options: Options(receiveTimeout: _esperaAutopilot),
       );
       return respuesta.data as Map<String, dynamic>;
+    } on DioException catch (error) {
+      if (error.type == DioExceptionType.receiveTimeout) {
+        throw const ApiException(
+          'El autopiloto está tardando demasiado. Puede seguir procesando: '
+          'revisa tus propuestas y candidaturas antes de volver a intentarlo.',
+        );
+      }
+      throw ApiClient.traducirError(error);
     } catch (error) {
       throw ApiClient.traducirError(error);
     }
@@ -249,6 +310,7 @@ class CandidatoService {
     try {
       final respuesta = await ApiClient.dio.post(
         '/postulaciones-autopilot/previsualizar',
+        options: Options(receiveTimeout: _esperaAutopilot),
       );
       return respuesta.data as Map<String, dynamic>;
     } catch (error) {

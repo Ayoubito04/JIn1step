@@ -26,11 +26,13 @@ class AppColors {
   static const tagNeutralBg = active;
   static const tagNeutralText = text;
   static const tagSuccessBg = Color(0xFFDCFAE5);
+  static const tagSuccessBorder = Color(0xFFA7F3D0);
   static const tagSuccessText = Color(0xFF04250E);
   static const tagWarningBg = Color(0xFFFFFBEB);
   static const tagWarningBorder = Color(0xFFFDE68A);
   static const tagWarningText = Color(0xFF92400E);
   static const tagErrorBg = Color(0xFFFFEDEA);
+  static const tagErrorBorder = Color(0xFFF5C2C0);
   static const tagErrorText = Color(0xFF831C1E);
 
   /// Fondos pálidos de avatar: identidad de la persona, nunca datos.
@@ -104,6 +106,15 @@ class AppText {
   static TextStyle get display => _mono(33, 1.1);
   static TextStyle get kpi => _mono(23, 1.2);
   static TextStyle get numInline => _mono(14, 1.5);
+  static TextStyle get badgeMono => GoogleFonts.geistMono(
+    fontSize: 12,
+    fontWeight: FontWeight.w600,
+    height: 1,
+    color: AppColors.white,
+    fontFeatures: _tabular,
+  );
+  static TextStyle get metaMono =>
+      _mono(12, 1.4, color: AppColors.muted);
   static TextStyle get h1 => _bricolage(23, FontWeight.w600, 1.2);
   static TextStyle get h2 => _bricolage(16, FontWeight.w600, 1.25);
   static TextStyle get body => _bricolage(14, FontWeight.w400, 1.5);
@@ -239,9 +250,9 @@ ThemeData construirTemaApp() {
       errorStyle: AppText.meta.copyWith(color: AppColors.negative),
       border: borde(AppColors.control),
       enabledBorder: borde(AppColors.control),
-      focusedBorder: borde(AppColors.ink, 1.5),
-      errorBorder: borde(AppColors.negative),
-      focusedErrorBorder: borde(AppColors.negative, 1.5),
+      focusedBorder: borde(AppColors.ink, 1),
+      errorBorder: borde(AppColors.negative, 1),
+      focusedErrorBorder: borde(AppColors.negative, 1),
     ),
     cardTheme: CardThemeData(
       elevation: 0,
@@ -325,21 +336,28 @@ ThemeData construirTemaApp() {
   );
 }
 
-/// Tokens de movimiento de animation.md. Solo `transform` y opacidad; nada
-/// supera los 300 ms y nunca se usa `easeIn` en la interfaz.
+/// Tokens de movimiento de animation.md y Autonomous Ops. Solo `transform` y
+/// opacidad; nada supera los 300 ms y nunca se usa `easeIn` en la interfaz.
 class Motion {
   Motion._();
 
   static const easeOut = Cubic(0.23, 1, 0.32, 1); // entradas, salidas, feedback
+  static const easeOps = Cubic(0.16, 1, 0.3, 1); // barrido técnico Autonomous Ops
   static const easeInOut = Cubic(0.77, 0, 0.175, 1); // movimiento en pantalla
   static const easeDrawer = Cubic(0.32, 0.72, 0, 1); // paneles que se apilan
 
   static const press = Duration(milliseconds: 120);
   static const fast = Duration(milliseconds: 150); // color, interruptor, tooltip
+  static const sweep = Duration(milliseconds: 160); // barrido horizontal
+  static const sweepStagger = Duration(milliseconds: 28); // escalonado de filas
   static const base = Duration(milliseconds: 200); // entradas, pasos, burbujas
   static const slow = Duration(milliseconds: 300); // splash, transición de pantalla
   static const stagger = Duration(milliseconds: 40); // escalonado entre pasos
 }
 
-/// Movimiento reducido del sistema: menos y más suave, no cero.
-bool reduce(BuildContext context) => MediaQuery.disableAnimationsOf(context);
+/// Preferencia manual de reducción de movimiento configurable desde Mi perfil.
+final ValueNotifier<bool> reducirMovimientoManual = ValueNotifier<bool>(false);
+
+/// Movimiento reducido del sistema o activado por el usuario en Mi perfil.
+bool reduce(BuildContext context) =>
+    MediaQuery.disableAnimationsOf(context) || reducirMovimientoManual.value;

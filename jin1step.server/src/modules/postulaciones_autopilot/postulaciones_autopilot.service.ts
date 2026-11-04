@@ -11,7 +11,7 @@ import { prisma } from '../../lib/prisma'
 import { HttpError } from '../../lib/http-error'
 import { iaDisponible } from '../../lib/ia'
 import { obtenerPreferencias } from '../preferencias_autopilot/preferencias_autopilot.service'
-import { calcularMatch } from '../postulacion/matching.service'
+import { calcularMatchEnMemoria } from '../postulacion/matching.service'
 import { TieneSuscripcionActiva } from '../suscripcion/suscripcion.service'
 import {
     MAX_OFERTAS_IA,
@@ -21,16 +21,17 @@ import {
     valorarOfertas,
 } from './valoracion_ia.service'
 
-//maxPorDia es un tope diario, no por sesión. Si el cron se ejecuta dos veces o
-//el usuario dispara el endpoint manual varias veces, no debe pasarse. Contamos
-//las postulaciones que la IA ya ha creado desde las 00:00 de HOY.
-async function postulacionesIaDeHoy(cvId: string) {
+//maxPorDia es un tope diario por usuario, no por sesión ni por CV individual.
+//Contamos las postulaciones que la IA ya ha creado desde las 00:00 de HOY
+//(excluyendo las propuestas descartadas por el candidato).
+async function postulacionesIaDeHoy(usuarioId: string) {
     const inicioDia = new Date()
     inicioDia.setHours(0, 0, 0, 0)
     return prisma.postulacion.count({
         where: {
-            cvId,
+            cv: { usuarioId },
             postuladoPorIa: true,
+            estado: { not: 'DESCARTADA' },
             fechaPostulacion: { gte: inicioDia },
         },
     })
@@ -72,10 +73,15 @@ function buscarCandidatas(usuarioId: string) {
             id: true,
             titulo: true,
             descripcion: true,
+            salario: true,
             modalidad: true,
             empresa: { select: { nombre: true, ubicacion: true } },
             requisitos: {
-                select: { obligatorio: true, habilidad: { select: { nombre: true } } },
+                select: {
+                    habilidadId: true,
+                    obligatorio: true,
+                    habilidad: { select: { nombre: true } },
+                },
             },
         },
     })
@@ -168,14 +174,19 @@ async function seleccionarOfertas(
         }
     }
 
-    //calcularMatch es SQL sobre CvHabilidad/OfertaRequisito, no IA. Se calcula
-    //siempre: es el match rating que se guarda y el plan B si la IA falla.
-    const puntuadas = await Promise.all(
-        candidatas.map(async (oferta) => ({
-            oferta,
-            match: await calcularMatch(cv.id, oferta.id),
-        })),
-    )
+    //Se cargan las habilidades del CV una única vez y se calcula el match híbrido
+    //en memoria sobre las ofertas ya leídas (evita N×4 consultas concurrentes).
+    const habilidadesCv = await prisma.cvHabilidad.findMany({
+        where: { cvId: cv.id },
+        select: {
+            habilidadId: true,
+            habilidad: { select: { nombre: true } },
+        },
+    })
+    const puntuadas = candidatas.map((oferta) => ({
+        oferta,
+        match: calcularMatchEnMemoria(cv.contenidoTexto ?? '', habilidadesCv, oferta),
+    }))
     const matches = new Map(puntuadas.map((p) => [p.oferta.id, p.match.puntuacion]))
 
     if (iaDisponible() && cv.contenidoTexto) {
@@ -205,7 +216,9 @@ async function seleccionarOfertas(
     const elegidas: Elegida[] = puntuadas
         .filter(
             ({ match }) =>
-                !match.sinRequisitos && match.puntuacion >= scoreMinimo,
+                (!match.sinRequisitos ||
+                    match.descripcionCubiertas.length + match.descripcionFaltantes.length > 0) &&
+                match.puntuacion >= scoreMinimo,
         )
         .sort((a, b) => b.match.puntuacion - a.match.puntuacion)
         .slice(0, restante)
@@ -215,8 +228,20 @@ async function seleccionarOfertas(
             puntuacionIa: null,
             motivoIa: null,
             cartaIa: null,
-            palabrasClaveCubiertas: [],
-            palabrasClaveFaltantes: [],
+            palabrasClaveCubiertas: Array.from(
+                new Set([
+                    ...match.obligatoriasCubiertas,
+                    ...match.opcionalesCubiertas,
+                    ...match.descripcionCubiertas,
+                ]),
+            ),
+            palabrasClaveFaltantes: Array.from(
+                new Set([
+                    ...match.obligatoriasFaltantes,
+                    ...match.opcionalesFaltantes,
+                    ...match.descripcionFaltantes,
+                ]),
+            ),
         }))
 
     return {
@@ -301,7 +326,7 @@ export async function ejecutarAutopilot(usuarioId: string, origen: Origen = 'MAN
         return { creadas: 0, motivo, restante, modo }
     }
 
-    const yaHechasHoy = await postulacionesIaDeHoy(cv.id)
+    const yaHechasHoy = await postulacionesIaDeHoy(usuarioId)
     const restante = preferencias.maxPorDia - yaHechasHoy
     if (restante <= 0) {
         return vacia('limite_diario_alcanzado', 0)
@@ -410,7 +435,7 @@ export async function previsualizarAutopilot(usuarioId: string) {
 
     const cv = await cargarCv(preferencias.cvId, usuarioId)
 
-    const yaHechasHoy = await postulacionesIaDeHoy(cv.id)
+    const yaHechasHoy = await postulacionesIaDeHoy(usuarioId)
     const restante = preferencias.maxPorDia - yaHechasHoy
     if (restante <= 0) {
         return {
@@ -434,6 +459,7 @@ export async function previsualizarAutopilot(usuarioId: string) {
             titulo: e.oferta.titulo,
             empresa: e.oferta.empresa.nombre,
             ubicacion: e.oferta.empresa.ubicacion,
+            salario: e.oferta.salario,
             modalidad: e.oferta.modalidad,
             score: puntuacionFinal(e),
             matchScore: e.matchScore,

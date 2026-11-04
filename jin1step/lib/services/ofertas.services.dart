@@ -57,6 +57,7 @@ class OfertasService {
     required String empresaId,
     required String titulo,
     required String descripcion,
+    String? salario,
     required String modalidad, // 'REMOTO' | 'HIBRIDO' | 'PRESENCIAL'
     required List<Map<String, dynamic>> requisitos,
   }) async {
@@ -67,6 +68,8 @@ class OfertasService {
           'empresaId': empresaId,
           'titulo': titulo,
           'descripcion': descripcion,
+          if (salario != null && salario.trim().isNotEmpty)
+            'salario': salario.trim(),
           'modalidad': modalidad,
           'requisitos': requisitos,
         },

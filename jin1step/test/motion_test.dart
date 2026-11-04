@@ -78,6 +78,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(_opacidadPrimeraBarra(tester), 1);
     });
+
+    testWidgets('al aumentar filled anima el nuevo paso sin reiniciar los anteriores', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_app(const Steps(filled: 2, animar: true)));
+      await tester.pumpAndSettle();
+      expect(_opacidadPrimeraBarra(tester), 1);
+
+      await tester.pumpWidget(_app(const Steps(filled: 3, animar: true)));
+      // La primera barra ya estaba llena y no se reinicia; la nueva se anima.
+      expect(_opacidadPrimeraBarra(tester), 1);
+      expect(tester.hasRunningAnimations, isTrue);
+      await tester.pumpAndSettle();
+      expect(tester.hasRunningAnimations, isFalse);
+    });
   });
 
   group('ChatBubble', () {

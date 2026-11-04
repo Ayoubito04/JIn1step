@@ -85,3 +85,34 @@ export async function borrarMiPerfil(
         next(err)
     }
 }
+
+export async function subirBanner(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+        if (!req.file) {
+            throw new HttpError(400, 'Falta la imagen del banner (campo "archivo")')
+        }
+        res.status(200).json(
+            await perfilService.guardarBanner(usuario.id, req.file),
+        )
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function borrarBanner(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+        res.status(200).json(await perfilService.borrarBanner(usuario.id))
+    } catch (err) {
+        next(err)
+    }
+}

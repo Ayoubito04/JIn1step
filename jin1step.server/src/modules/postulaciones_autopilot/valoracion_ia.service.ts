@@ -114,6 +114,7 @@ export type OfertaParaIa = {
     id: string
     titulo: string
     descripcion: string
+    salario?: string | null
     modalidad: string
     empresa: { nombre: string; ubicacion: string | null }
     requisitos: { obligatorio: boolean; habilidad: { nombre: string } }[]
@@ -133,6 +134,7 @@ function resumenOferta(o: OfertaParaIa) {
         titulo: o.titulo,
         empresa: o.empresa.nombre,
         ubicacion: o.empresa.ubicacion,
+        salario: o.salario ?? null,
         modalidad: o.modalidad,
         descripcion: o.descripcion.slice(0, MAX_DESCRIPCION_CHARS),
         requisitos: o.requisitos.map((r) => ({

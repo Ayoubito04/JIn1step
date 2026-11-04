@@ -5,6 +5,8 @@ import '../widgets/design_system.dart';
 import '../services/chat.service.dart';
 import '../services/postulaciones.service.dart';
 import 'mensajes.dart';
+import 'perfil.dart';
+import 'perfil_candidato.dart';
 
 class CandidatosOfertaPage extends StatefulWidget {
   const CandidatosOfertaPage({
@@ -37,6 +39,28 @@ class _CandidatosOfertaPageState extends State<CandidatosOfertaPage> {
       _future = future;
     });
     await future;
+  }
+
+  Future<void> _verPerfil(Map<String, dynamic> postulacion) async {
+    final cv = postulacion['cv'] as Map<String, dynamic>?;
+    final candidato = cv?['usuario'] as Map<String, dynamic>?;
+    final candidatoId = candidato?['id'] as String?;
+    if (candidatoId == null || candidatoId.isEmpty) {
+      setState(() => _error = 'No se pudo identificar al candidato.');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PerfilCandidatoPage(
+          candidatoId: candidatoId,
+          candidatoInicial: candidato,
+          postulacion: postulacion,
+          oferta: widget.oferta,
+          reclutadorId: widget.reclutadorId,
+        ),
+      ),
+    );
+    if (mounted) await _recargar();
   }
 
   Future<void> _abrirChat(Map<String, dynamic> postulacion) async {
@@ -213,6 +237,12 @@ class _CandidatosOfertaPageState extends State<CandidatosOfertaPage> {
   Widget _tarjeta(BuildContext context, Map<String, dynamic> postulacion) {
     final cv = postulacion['cv'] as Map<String, dynamic>? ?? {};
     final candidato = cv['usuario'] as Map<String, dynamic>? ?? {};
+    final perfil = candidato['candidatoPerfil'] as Map<String, dynamic>? ?? {};
+    final banner = (perfil['banner'] as String?)?.trim() ?? '';
+    final bannerBytes = decodificarImagenBanner(banner);
+    final ubicacion = (perfil['ubicacion'] as String?)?.trim() ?? '';
+    final disponibilidad = (perfil['disponibilidad'] as String?)?.trim() ?? '';
+    final expectativaSalarial = (perfil['expectativaSalarial'] as num?)?.toInt();
     final id = candidato['id'] as String? ?? '';
     final nombre = '${candidato['nombre'] ?? ''} ${candidato['apellidos'] ?? ''}'.trim();
     final score = postulacion['matchScore'];
@@ -224,16 +254,64 @@ class _CandidatosOfertaPageState extends State<CandidatosOfertaPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              CircleAvatar(child: Text(nombre.isEmpty ? '?' : nombre.substring(0, 1).toUpperCase())),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(nombre.isEmpty ? 'Candidato' : nombre, style: const TextStyle(fontWeight: FontWeight.w800)),
-                Text(cv['titulo'] as String? ?? 'Currículum', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              ])),
-              if (score is num) Chip(label: Text('${score.round()}%')),
-            ]),
+            if (bannerBytes != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.memory(
+                  bannerBytes,
+                  height: 84,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: id.isEmpty ? null : () => _verPerfil(postulacion),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(children: [
+                  CircleAvatar(child: Text(nombre.isEmpty ? '?' : nombre.substring(0, 1).toUpperCase())),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(nombre.isEmpty ? 'Candidato' : nombre, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    Text(cv['titulo'] as String? ?? 'Currículum', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  ])),
+                  if (score is num) Chip(label: Text('${score.round()}%')),
+                ]),
+              ),
+            ),
+            if (ubicacion.isNotEmpty ||
+                disponibilidad.isNotEmpty ||
+                expectativaSalarial != null) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  if (ubicacion.isNotEmpty) Chip(label: Text(ubicacion)),
+                  if (disponibilidad.isNotEmpty)
+                    Chip(label: Text(disponibilidad)),
+                  if (expectativaSalarial != null)
+                    Chip(
+                      label: Text(
+                        'Expectativa: ${formatearEurosAnuales(expectativaSalarial)} / año',
+                      ),
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: id.isEmpty ? null : () => _verPerfil(postulacion),
+                icon: const Icon(Icons.person_outline),
+                label: const Text('Ver perfil completo'),
+              ),
+            ),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(

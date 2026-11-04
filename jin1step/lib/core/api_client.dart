@@ -65,10 +65,13 @@ class ApiClient {
       switch (error.type) {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.connectionError:
-        case DioExceptionType.receiveTimeout:
         case DioExceptionType.sendTimeout:
           return const ApiException(
             'No se puede conectar con el servidor. ¿Está encendido el backend?',
+          );
+        case DioExceptionType.receiveTimeout:
+          return const ApiException(
+            'El servidor tardó demasiado en responder. Inténtalo más tarde.',
           );
         default:
           break;

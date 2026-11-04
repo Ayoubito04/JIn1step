@@ -16,6 +16,12 @@ export const crearOfertaSchema = z.object({
         .trim()
         .min(1, 'La descripción es obligatoria')
         .max(1000, 'La descripción no puede superar los 1000 caracteres'),
+    salario: z
+        .string()
+        .trim()
+        .min(1, 'El salario no puede estar vacío')
+        .max(100, 'El salario no puede superar los 100 caracteres')
+        .nullish(),
     modalidad: z.enum(['REMOTO', 'HIBRIDO', 'PRESENCIAL']),
     requisitos: z
         .array(

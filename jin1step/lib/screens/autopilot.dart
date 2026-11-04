@@ -28,6 +28,7 @@ const _historialVisible = 5;
 
 class _AutopilotPageState extends State<AutopilotPage> {
   late final CandidatoService _service = widget.service ?? CandidatoService();
+  final _scrollController = ScrollController();
   bool _cargando = true;
   bool _guardando = false;
   bool _ejecutando = false;
@@ -53,11 +54,18 @@ class _AutopilotPageState extends State<AutopilotPage> {
   // Resultado de «Ejecutar autopiloto»: se pinta encima del botón.
   String? _error;
   String? _mensaje;
+  bool _mostrarEnlaceEnviadasEnMensaje = false;
 
   @override
   void initState() {
     super.initState();
     _cargar();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _cargar() async {
@@ -119,9 +127,15 @@ class _AutopilotPageState extends State<AutopilotPage> {
     return !_fecha(postulacion).isBefore(medianoche);
   }
 
-  /// Candidaturas que el autopiloto creó hoy, sea cual sea su estado: es lo que
-  /// cuenta el servidor para el tope diario (propuestas y descartadas incluidas).
-  int get _cupoHoy => _postulacionesIa.where(_esDeHoy).length;
+  /// Candidaturas que el autopiloto creó hoy (sin contar propuestas descartadas).
+  int get _cupoHoy => _postulacionesIa
+      .where((p) => _esDeHoy(p) && p['estado'] != 'DESCARTADA')
+      .length;
+
+  /// Valor mostrado sobre el límite diario actual: evita fracciones incoherentes
+  /// como «20 / 10» cuando el usuario reduce «Máximo al día» después de haber
+  /// ejecutado el autopiloto.
+  int get _cupoHoyMostrado => _cupoHoy.clamp(0, _maxPorDia);
 
   /// Enviadas de verdad hoy (sin propuestas pendientes ni descartadas).
   int get _enviadasHoy => _postulacionesIa
@@ -150,6 +164,34 @@ class _AutopilotPageState extends State<AutopilotPage> {
   List<Map<String, dynamic>> get _enviadasVigentes => _postulacionesIa
       .where((p) => esCandidaturaEnviada(p) && p['estado'] != 'RETIRADA')
       .toList();
+
+  Future<void> _verCandidaturaEnviada(Map<String, dynamic> postulacion) async {
+    final id = postulacion['id'];
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => MisPostulacionesPage(
+          postulacionId: id is String ? id : null,
+          filtroInicial: 'Por IA',
+        ),
+      ),
+    );
+    await _refrescarTodo();
+  }
+
+  void _desplazarArriba() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      if (reduce(context)) {
+        _scrollController.jumpTo(0);
+      } else {
+        _scrollController.animateTo(
+          0,
+          duration: Motion.slow,
+          curve: Motion.easeOut,
+        );
+      }
+    });
+  }
 
   Future<void> _verTodasPorIa() async {
     await Navigator.of(context).push<void>(
@@ -272,6 +314,7 @@ class _AutopilotPageState extends State<AutopilotPage> {
     if (!_suscripcionActiva) {
       setState(() {
         _mensaje = null;
+        _mostrarEnlaceEnviadasEnMensaje = false;
         _error = 'Necesitas una suscripción activa para usar el autopiloto.';
       });
       return;
@@ -279,6 +322,7 @@ class _AutopilotPageState extends State<AutopilotPage> {
     if (!_activo) {
       setState(() {
         _mensaje = null;
+        _mostrarEnlaceEnviadasEnMensaje = false;
         _error = 'Activa «Postular por mí» para ejecutar el autopiloto.';
       });
       return;
@@ -287,6 +331,7 @@ class _AutopilotPageState extends State<AutopilotPage> {
       _ejecutando = true;
       _error = null;
       _mensaje = null;
+      _mostrarEnlaceEnviadasEnMensaje = false;
     });
     try {
       final resultado = await _service.ejecutarAutopilot();
@@ -296,16 +341,20 @@ class _AutopilotPageState extends State<AutopilotPage> {
       final revision = resultado['modo'] != null
           ? resultado['modo'] == 'REVISION'
           : _revisarAntes;
-      if (mounted) {
-        setState(
-          () => _mensaje = creadas > 0
-              ? (revision
-                    ? 'Hay $creadas ${creadas == 1 ? 'propuesta nueva' : 'propuestas nuevas'} para revisar.'
-                    : 'Se enviaron $creadas ${creadas == 1 ? 'candidatura' : 'candidaturas'} automáticamente.')
-              : _textoMotivo(motivo),
-        );
-      }
       await _refrescarTodo();
+      if (mounted) {
+        setState(() {
+          _mostrarEnlaceEnviadasEnMensaje = creadas > 0 && !revision;
+          _mensaje = creadas > 0
+              ? (revision
+                    ? 'Hay $creadas ${creadas == 1 ? 'propuesta nueva' : 'propuestas nuevas'} para revisar. Toca cada oferta en «Propuestas para revisar» para leer la carta y enviarla, o pulsa «Enviar todas».'
+                    : 'Se enviaron $creadas ${creadas == 1 ? 'candidatura' : 'candidaturas'} automáticamente. Toca cualquiera en «Últimas enviadas por IA» para seguir su estado.')
+              : _textoMotivo(motivo);
+        });
+        if (creadas > 0 && revision) {
+          _desplazarArriba();
+        }
+      }
     } catch (error) {
       if (mounted) setState(() => _error = _textoError(error));
     } finally {
@@ -325,6 +374,13 @@ class _AutopilotPageState extends State<AutopilotPage> {
     // cerrada): se vuelve a leer.
     await _refrescarTodo();
     if (resultado == null || !mounted) return;
+    if (resultado == _ResultadoPropuesta.enviada) {
+      setState(() {
+        _varianteAviso = StatusVariant.success;
+        _avisoPropuestas =
+            'Candidatura enviada. Puedes consultar su estado o retirarla desde «Últimas enviadas por IA» o en «Mis candidaturas».';
+      });
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -441,6 +497,7 @@ class _AutopilotPageState extends State<AutopilotPage> {
         child: _cargando
             ? const Center(child: AppSpinner(size: 24))
             : ListView(
+                controller: _scrollController,
                 padding: const EdgeInsets.all(AppSpacing.screen),
                 children: [
                   _cabecera(),
@@ -469,6 +526,13 @@ class _AutopilotPageState extends State<AutopilotPage> {
                   if (_mensaje != null) ...[
                     const SizedBox(height: AppSpacing.gap),
                     Notice(message: _mensaje!, variant: StatusVariant.success),
+                    if (_mostrarEnlaceEnviadasEnMensaje) ...[
+                      const SizedBox(height: AppSpacing.micro),
+                      LinkAction(
+                        label: 'Ver mis candidaturas enviadas por IA',
+                        onTap: _verTodasPorIa,
+                      ),
+                    ],
                   ],
                   if (_error != null) ...[
                     const SizedBox(height: AppSpacing.gap),
@@ -565,6 +629,11 @@ class _AutopilotPageState extends State<AutopilotPage> {
             'Propuestas para revisar',
             trailing: Text('${propuestas.length}', style: AppText.numInline),
           ),
+          const SizedBox(height: AppSpacing.micro),
+          Text(
+            'Toca una oferta para leer la carta de la IA y decidir si enviarla, o envíalas todas en un paso.',
+            style: AppText.mutedBody,
+          ),
           const SizedBox(height: AppSpacing.group),
           PanelList(
             children: [
@@ -584,6 +653,13 @@ class _AutopilotPageState extends State<AutopilotPage> {
         if (_avisoPropuestas != null) ...[
           const SizedBox(height: AppSpacing.group),
           Notice(message: _avisoPropuestas!, variant: _varianteAviso),
+          if (_varianteAviso != StatusVariant.error) ...[
+            const SizedBox(height: AppSpacing.micro),
+            LinkAction(
+              label: 'Ver mis candidaturas enviadas por IA',
+              onTap: _verTodasPorIa,
+            ),
+          ],
         ],
       ],
     );
@@ -592,15 +668,27 @@ class _AutopilotPageState extends State<AutopilotPage> {
   Widget _filaPropuesta(Map<String, dynamic> propuesta) {
     final oferta = propuesta['oferta'] as Map<String, dynamic>? ?? {};
     final empresa = oferta['empresa'] as Map<String, dynamic>?;
+    final salario = (oferta['salario'] as String?)?.trim();
     final motivo = (propuesta['motivoIa'] as String?)?.trim();
+    final lineaEmpresa = [
+      empresa?['nombre'] as String? ?? 'Empresa',
+      if (salario != null && salario.isNotEmpty) salario,
+    ].join(' · ');
     return ListRow(
       title: oferta['titulo'] as String? ?? 'Oferta',
       lines: [
-        empresa?['nombre'] as String? ?? 'Empresa',
+        lineaEmpresa,
         if (motivo != null && motivo.isNotEmpty)
           motivo.length > 110 ? '${motivo.substring(0, 107)}…' : motivo,
       ],
-      trailing: MatchIndicator(match: _encaje(propuesta)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const StatusTag(label: 'Revisar', variant: StatusVariant.warning),
+          const SizedBox(width: AppSpacing.group),
+          MatchIndicator(match: _encaje(propuesta)),
+        ],
+      ),
       onTap: () => _abrirPropuesta(propuesta),
     );
   }
@@ -653,36 +741,43 @@ class _AutopilotPageState extends State<AutopilotPage> {
     ],
   );
 
-  Widget _panelHoy() => Panel(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(child: Text('Hoy', style: AppText.h2)),
-            Semantics(
-              label: '$_cupoHoy de $_maxPorDia del cupo de hoy',
-              excludeSemantics: true,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('$_cupoHoy / $_maxPorDia', style: AppText.numInline),
-                  const SizedBox(width: AppSpacing.group),
-                  Steps(filled: _pasosCupo),
-                ],
+  Widget _panelHoy() {
+    final usadas = _cupoHoyMostrado;
+    final restantes = (_maxPorDia - _cupoHoy).clamp(0, _maxPorDia);
+    final pendientes = _propuestas.length;
+    final textoHoy = restantes == 0
+        ? 'Has completado el límite de $_maxPorDia ${_maxPorDia == 1 ? 'candidatura' : 'candidaturas'} de hoy. Sube «Máximo al día» si quieres buscar más hoy, o espera a mañana.'
+        : pendientes > 0
+        ? 'Tienes $pendientes ${pendientes == 1 ? 'propuesta pendiente' : 'propuestas pendientes'} arriba. Revísalas para liberar hueco o seguir buscando hoy.'
+        : 'La búsqueda automática se hace una vez al día. Te ${restantes == 1 ? 'queda 1 disponible' : 'quedan $restantes disponibles'} hoy si quieres ejecutarlo ahora con el botón de abajo.';
+
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text('Hoy', style: AppText.h2)),
+              Semantics(
+                label: '$usadas de $_maxPorDia del cupo de hoy',
+                excludeSemantics: true,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('$usadas / $_maxPorDia', style: AppText.numInline),
+                    const SizedBox(width: AppSpacing.group),
+                    Steps(filled: _pasosCupo, animar: true),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.micro),
-        Text(
-          'Se ejecuta solo una vez al día. También puedes lanzarlo ahora con '
-          'el botón de abajo.',
-          style: AppText.mutedBody,
-        ),
-      ],
-    ),
-  );
+            ],
+          ),
+          const SizedBox(height: AppSpacing.micro),
+          Text(textoHoy, style: AppText.mutedBody),
+        ],
+      ),
+    );
+  }
 
   Widget _listaHistorial() {
     if (_historial.isEmpty) {
@@ -752,6 +847,11 @@ class _AutopilotPageState extends State<AutopilotPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text(
+          'Toca una candidatura para ver su estado, la valoración de la IA o retirarla.',
+          style: AppText.mutedBody,
+        ),
+        const SizedBox(height: AppSpacing.group),
         PanelList(
           children: [
             for (final postulacion in vigentes.take(3)) _filaEnviada(postulacion),
@@ -775,6 +875,7 @@ class _AutopilotPageState extends State<AutopilotPage> {
       title: oferta['titulo'] as String? ?? 'Oferta',
       lines: [nombreEmpresa == null ? cuando : '$nombreEmpresa · $cuando'],
       trailing: MatchIndicator(match: _encaje(postulacion)),
+      onTap: () => _verCandidaturaEnviada(postulacion),
     );
   }
 }
@@ -880,7 +981,7 @@ class _DetallePropuestaState extends State<_DetallePropuesta> {
             ),
             const SizedBox(height: AppSpacing.group),
             SecondaryButton(
-              label: _descartando ? 'Descartando…' : 'Descartar',
+              label: _descartando ? 'Descartando…' : 'Descartar propuesta',
               onPressed: _enviando || _descartando
                   ? null
                   : () => _resolver(aprobar: false),

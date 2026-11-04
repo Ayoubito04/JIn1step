@@ -12,12 +12,16 @@ import type { ActualizarPerfilInput } from './CandidatoPerfil.schema'
 const PERFIL_VACIO = {
     ubicacion: null,
     disponibilidad: null,
+    expectativaSalarial: null,
+    banner: null,
 }
 
 const CAMPOS_PUBLICOS = {
     usuarioId: true,
     ubicacion: true,
     disponibilidad: true,
+    expectativaSalarial: true,
+    banner: true,
 } as const
 
 //El perfil propio. Nunca lanza 404: si no hay fila, devuelve los valores
@@ -38,7 +42,30 @@ export async function obtenerMiPerfil(usuarioId: string) {
 export async function obtenerPerfilDeCandidato(candidatoId: string) {
     const usuario = await prisma.usuario.findFirst({
         where: { id: candidatoId, rol: 'CANDIDATO' },
-        select: { id: true },
+        select: {
+            id: true,
+            nombre: true,
+            apellidos: true,
+            email: true,
+            createdAt: true,
+            cvs: {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                    id: true,
+                    titulo: true,
+                    atsScore: true,
+                    perfilIa: true,
+                    contenidoTexto: true,
+                    createdAt: true,
+                    habilidades: {
+                        select: {
+                            nivel: true,
+                            habilidad: { select: { id: true, nombre: true } },
+                        },
+                    },
+                },
+            },
+        },
     })
 
     if (!usuario) {
@@ -50,7 +77,18 @@ export async function obtenerPerfilDeCandidato(candidatoId: string) {
         select: CAMPOS_PUBLICOS,
     })
 
-    return perfil ?? { usuarioId: candidatoId, ...PERFIL_VACIO }
+    const base = perfil ?? { usuarioId: candidatoId, ...PERFIL_VACIO }
+    return {
+        ...base,
+        usuario: {
+            id: usuario.id,
+            nombre: usuario.nombre,
+            apellidos: usuario.apellidos,
+            email: usuario.email,
+            createdAt: usuario.createdAt,
+        },
+        cvs: usuario.cvs,
+    }
 }
 
 //upsert y no update: el perfil nace la primera vez que se guarda. Con update
@@ -67,6 +105,29 @@ export async function actualizarMiPerfil(
         where: { usuarioId },
         create: { usuarioId, ...datos },
         update: datos,
+        select: CAMPOS_PUBLICOS,
+    })
+}
+
+export async function guardarBanner(
+    usuarioId: string,
+    archivo: Express.Multer.File,
+) {
+    const base64 = archivo.buffer.toString('base64')
+    const dataUrl = `data:${archivo.mimetype};base64,${base64}`
+    return prisma.candidatoPerfil.upsert({
+        where: { usuarioId },
+        create: { usuarioId, banner: dataUrl },
+        update: { banner: dataUrl },
+        select: CAMPOS_PUBLICOS,
+    })
+}
+
+export async function borrarBanner(usuarioId: string) {
+    return prisma.candidatoPerfil.upsert({
+        where: { usuarioId },
+        create: { usuarioId, banner: null },
+        update: { banner: null },
         select: CAMPOS_PUBLICOS,
     })
 }

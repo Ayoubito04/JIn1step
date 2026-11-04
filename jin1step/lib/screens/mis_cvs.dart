@@ -13,9 +13,14 @@ const _maxBytesPdf = 5 * 1024 * 1024;
 const _habilidadesVisibles = 5;
 
 class MisCvsPage extends StatefulWidget {
-  const MisCvsPage({super.key, this.seleccionable = true});
+  const MisCvsPage({
+    super.key,
+    this.seleccionable = true,
+    this.onVerPerfil,
+  });
 
   final bool seleccionable;
+  final VoidCallback? onVerPerfil;
 
   @override
   State<MisCvsPage> createState() => _MisCvsPageState();
@@ -195,7 +200,17 @@ class _MisCvsPageState extends State<MisCvsPage> {
               ),
               const SizedBox(width: AppSpacing.group),
             ],
-            const Expanded(child: ScreenHeader(title: 'Mi CV')),
+            Expanded(
+              child: ScreenHeader(
+                title: 'Mi CV',
+                trailing: widget.onVerPerfil == null
+                    ? null
+                    : LinkAction(
+                        label: 'Editar mi perfil',
+                        onTap: widget.onVerPerfil!,
+                      ),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.gap),

@@ -29,6 +29,20 @@ export const actualizarPerfilSchema = z
             .min(1, 'La disponibilidad no puede estar vacía')
             .max(200, 'La disponibilidad no puede superar los 200 caracteres')
             .nullish(),
+
+        expectativaSalarial: z
+            .number({ message: 'La expectativa salarial debe ser un número' })
+            .int('La expectativa salarial debe ser un número entero')
+            .min(1000, 'La expectativa salarial mínima es de 1.000 € brutos/año')
+            .max(500000, 'La expectativa salarial no puede superar los 500.000 €')
+            .nullish(),
+
+        banner: z
+            .string()
+            .trim()
+            .min(1, 'El banner no puede estar vacío')
+            .max(10_000_000, 'La imagen del banner supera el tamaño máximo permitido')
+            .nullish(),
     })
     .strict()
     //Sin esto, un PATCH con {} pasaría la validación y haría un upsert que no

@@ -323,6 +323,14 @@ class _RegisterPageState extends State<RegisterPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _selectorRol(),
+              if (_rol == Rol.reclutador) ...[
+                const SizedBox(height: AppSpacing.group),
+                const InlineNotice(
+                  variant: StatusVariant.warning,
+                  message:
+                      'La experiencia para reclutadores está en desarrollo. Puedes crear tu cuenta igualmente.',
+                ),
+              ],
               const SizedBox(height: AppSpacing.gap),
               _campoNombre(),
               const SizedBox(height: AppSpacing.gap),
@@ -350,8 +358,8 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Widget _selectorRol() {
-    // Se construye a partir de Rol.values: si mañana se añade un rol al
-    // enum, aparece aquí sin tocar esta pantalla.
+    // Selector Candidato/a · Reclutador/a (radio) en una sola fila, tal como
+    // especifica DESIGN.md sección 5.
     return Semantics(
       container: true,
       label: 'Soy',
@@ -359,17 +367,26 @@ class _RegisterPageState extends State<RegisterPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Soy', style: AppText.label),
-          for (final rol in Rol.values)
-            AppRadioRow(
-              label: switch (rol) {
-                Rol.candidato => 'Candidato/a',
-                Rol.reclutador => 'Reclutador/a',
-              },
-              selected: rol == _rol,
-              onTap: () {
-                if (!_cargando) setState(() => _rol = rol);
-              },
-            ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (var i = 0; i < Rol.values.length; i++) ...[
+                if (i > 0) const SizedBox(width: AppSpacing.group),
+                Expanded(
+                  child: AppRadioRow(
+                    label: switch (Rol.values[i]) {
+                      Rol.candidato => 'Candidato/a',
+                      Rol.reclutador => 'Reclutador/a',
+                    },
+                    selected: Rol.values[i] == _rol,
+                    onTap: () {
+                      if (!_cargando) setState(() => _rol = Rol.values[i]);
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );
@@ -415,40 +432,38 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Widget _botonGoogle() {
-    if (kIsWeb) {
-      if (googleWebClientId.isEmpty) {
-        return Text(
-          _errorGoogle ??
-              'Google estará disponible al configurar el cliente web.',
-          textAlign: TextAlign.center,
-          style: AppText.meta,
-        );
-      }
-      if (_errorGoogle != null) {
-        return Notice(message: _errorGoogle!, variant: StatusVariant.error);
-      }
-      if (!_googlePreparado) {
-        return const SizedBox(
-          height: AppSpacing.field,
-          child: Center(child: AppSpinner()),
-        );
-      }
-      return Center(
-        child: SizedBox(
-          width: double.infinity,
-          height: 50,
-          child: IgnorePointer(
-            ignoring: _cargando,
-            child: google_web.buildGoogleSignInWebButton(),
+    // DESIGN.md 3.2.7 y 5: Botón de Google siempre como SecondaryButton con el
+    // logo multicolor oficial y el texto «Registrarme con Google».
+    final botonDiseno = SecondaryButton(
+      label: 'Registrarme con Google',
+      leading: const GoogleLogoMark(),
+      onPressed: kIsWeb
+          ? () {
+              if (_errorGoogle != null) {
+                setState(() => _error = _errorGoogle);
+              }
+            }
+          : _registrarseConGoogle,
+    );
+
+    if (kIsWeb && _googlePreparado && _errorGoogle == null) {
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          botonDiseno,
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.01,
+              child: IgnorePointer(
+                ignoring: _cargando,
+                child: google_web.buildGoogleSignInWebButton(),
+              ),
+            ),
           ),
-        ),
+        ],
       );
     }
 
-    return SecondaryButton(
-      label: 'Registrarme con Google',
-      leading: const GoogleLogoMark(),
-      onPressed: _registrarseConGoogle,
-    );
+    return botonDiseno;
   }
 }

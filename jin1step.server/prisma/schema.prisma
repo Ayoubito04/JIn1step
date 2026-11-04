@@ -107,9 +107,11 @@ model Usuario {
 }
 
 model CandidatoPerfil {
-  usuarioId      String  @id @map("usuario_id")
-  ubicacion      String?
-  disponibilidad String?
+  usuarioId           String  @id @map("usuario_id")
+  ubicacion           String?
+  disponibilidad      String?
+  expectativaSalarial Int?    @map("expectativa_salarial")
+  banner              String?
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
@@ -178,6 +180,7 @@ model Oferta {
   reclutadorId     String       @map("reclutador_id")
   titulo           String
   descripcion      String
+  salario          String?
   modalidad        Modalidad
   estado           EstadoOferta @default(ABIERTA)
   fechaPublicacion DateTime     @default(now()) @map("fecha_publicacion")

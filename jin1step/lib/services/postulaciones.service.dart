@@ -37,6 +37,17 @@ class PostulacionesService {
     }
   }
 
+  Future<Map<String, dynamic>> obtenerPerfilCandidato(String candidatoId) async {
+    try {
+      final response = await ApiClient.dio.get(
+        '/perfil-candidato/$candidatoId',
+      );
+      return response.data as Map<String, dynamic>;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
   Future<Map<String, dynamic>> actualizarEstado(
     String postulacionId,
     String estado,

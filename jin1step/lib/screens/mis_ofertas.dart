@@ -100,8 +100,16 @@ class _MisOfertasPageState extends State<MisOfertasPage> {
                                 children: [
                                   Text(oferta['titulo'] as String? ?? 'Oferta',
                                       style: const TextStyle(fontWeight: FontWeight.w800)),
-                                  Text(empresa['nombre'] as String? ?? 'Empresa',
-                                      style: TextStyle(color: colors.onSurfaceVariant)),
+                                  Text(
+                                    [
+                                      empresa['nombre'] as String? ?? 'Empresa',
+                                      if (((oferta['salario'] as String?) ?? '')
+                                          .trim()
+                                          .isNotEmpty)
+                                        (oferta['salario'] as String).trim(),
+                                    ].join(' · '),
+                                    style: TextStyle(color: colors.onSurfaceVariant),
+                                  ),
                                 ],
                               ),
                             ),

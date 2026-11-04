@@ -5,60 +5,112 @@
 # JIn1Step
 
 **Buscar trabajo en un solo paso.** JIn1Step es una plataforma de empleo que conecta a
-candidatos y reclutadores, y que incorpora un **autopiloto de postulaciones**: el candidato
-sube su CV una vez, el sistema detecta sus habilidades y se postula automáticamente a las
-ofertas que encajan con su perfil, sin que tenga que revisar tablones de empleo cada día.
+candidatos y reclutadores e incorpora un **autopiloto de postulaciones con IA**: el candidato
+sube su CV una vez, el sistema detecta sus habilidades, calcula un **match híbrido** frente a los
+requisitos y la descripción de cada oferta, y postula automáticamente (o propone sugerencias para
+revisar antes de enviar) a las vacantes que mejor encajan con su perfil.
 
 ---
 
 ## Tabla de contenidos
 
+- [Capturas de pantalla](#capturas-de-pantalla)
 - [Qué hace la app](#qué-hace-la-app)
 - [Estado del proyecto](#estado-del-proyecto)
 - [Estructura del repositorio](#estructura-del-repositorio)
 - [Stack tecnológico](#stack-tecnológico)
 - [Base de datos](#base-de-datos)
 - [API REST](#api-rest)
-- [Cómo funciona el matching](#cómo-funciona-el-matching)
+- [Cómo funciona el matching híbrido](#cómo-funciona-el-matching-híbrido)
 - [El autopiloto](#el-autopiloto)
 - [Puesta en marcha](#puesta-en-marcha)
 - [Tests](#tests)
 - [Decisiones de diseño](#decisiones-de-diseño)
-- [Pendiente](#pendiente)
+
+---
+
+## Capturas de pantalla
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/01_login.png" alt="Pantalla de Login" width="260"><br>
+      <sub><b>1. Acceso y autenticación</b><br>Login con correo/contraseña y Google Sign-In</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/02_home_candidato.png" alt="Inicio del candidato" width="260"><br>
+      <sub><b>2. Inicio del candidato («Hoy»)</b><br>Resumen diario, 4 KPIs y mejores matches con salario</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/03_oferta_detalle_match.png" alt="Detalle de oferta y match híbrido" width="260"><br>
+      <sub><b>3. Detalle de oferta y Match Híbrido</b><br>Obligatorias (50 %), deseables (20 %) y descripción (30 %)</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/04_autopiloto.png" alt="Autopiloto de postulaciones" width="260"><br>
+      <sub><b>4. Autopiloto IA</b><br>Revisión previa, umbrales, cupo diario y envíos por IA</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/05_perfil_candidato.png" alt="Perfil del candidato" width="260"><br>
+      <sub><b>5. Perfil del candidato</b><br>Portada estilo LinkedIn, ubicación, disponibilidad y expectativa salarial</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/06_reclutador_perfil_candidato.png" alt="Vista del perfil del candidato para el reclutador" width="260"><br>
+      <sub><b>6. Vista para el reclutador</b><br>Perfil completo del candidato, resumen IA, salario y habilidades</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
 ## Qué hace la app
 
-JIn1Step tiene tres roles (`CANDIDATO`, `RECLUTADOR`, `ADMIN`) y gira en torno a cuatro ideas:
+JIn1Step tiene tres roles (`CANDIDATO`, `RECLUTADOR`, `ADMIN`) y gira en torno a cinco pilares:
 
 ### 1. El CV como fuente de verdad
 
-El candidato sube su currículum en PDF. El servidor extrae el texto, lo cruza contra un
-catálogo cerrado de habilidades técnicas (~70 entradas: lenguajes, frameworks, bases de
-datos, cloud, testing, idiomas…) y guarda las habilidades detectadas asociadas al CV.
-El candidato puede después ajustar esa lista a mano y declarar su nivel
+El candidato sube su currículum en PDF. El servidor extrae el texto, calcula su `atsScore`, lo
+cruza contra un catálogo cerrado de habilidades técnicas (~70 entradas: lenguajes, frameworks,
+bases de datos, cloud, testing, metodologías, idiomas…) y genera además un **resumen profesional
+estructurado con IA** (`perfilIa`: resumen ejecutivo, seniority, sector, roles objetivo e idiomas).
+El candidato puede ajustar sus habilidades en cualquier momento y declarar su nivel
 (`BASICO` / `INTERMEDIO` / `AVANZADO`).
 
-### 2. Ofertas con requisitos explícitos
+### 2. Ofertas con requisitos explícitos y banda salarial
 
-El reclutador crea su empresa y publica ofertas (remoto / híbrido / presencial) marcando qué
-habilidades pide y cuáles son **obligatorias** y cuáles **deseables**.
+El reclutador crea su empresa y publica ofertas (`REMOTO` / `HIBRIDO` / `PRESENCIAL`) indicando el
+**rango salarial** (`salario`) y qué habilidades pide, distinguiendo cuáles son **obligatorias** y
+cuáles **deseables**.
 
-### 3. Match calculado, no adivinado
+### 3. Match híbrido (50 / 20 / 30), explicable y reproducible
 
-Cada pareja CV ↔ oferta produce una puntuación de 0 a 100 y el detalle de qué requisitos se
-cubren y cuáles faltan. El candidato puede **simular el match antes de postularse**, y el
-reclutador ve las postulaciones de su oferta ordenadas por puntuación.
+Cada pareja CV ↔ oferta produce una puntuación de 0 a 100 combinando tres dimensiones:
+- **50 %** requisitos obligatorios cubiertos.
+- **20 %** requisitos deseables cubiertos.
+- **30 %** encaje del CV con las tecnologías y palabras clave detectadas en el texto de la
+  **descripción de la oferta**.
 
-### 4. Autopiloto (función de pago)
+Además del porcentaje total, la app muestra el **hallazgo de mayor impacto** (*«Con Docker pasarías
+de 81 % a 96 %»*) y desglosa qué términos de la descripción ya aparecen en el CV y cuáles faltan.
 
-Con una suscripción activa, el candidato configura sus preferencias (qué CV usar, puntuación
-mínima, máximo de postulaciones al día) y el sistema postula por él a las ofertas abiertas que
-superan ese umbral, de mayor a menor match.
+### 4. Autopiloto de postulaciones (con modo de revisión previa)
 
-Además hay **chat directo** candidato ↔ reclutador, opcionalmente ligado a una oferta concreta,
-con contador de mensajes sin leer.
+Con una suscripción activa (`MENSUAL` o `ANUAL`), el candidato configura qué CV usar, la puntuación
+mínima y el tope diario de envíos. Puede elegir entre:
+- **Envío automático**, o
+- **Revisar antes de enviar** (`revisarAntes`): el autopiloto previsualiza las ofertas recomendadas
+  y su valoración IA para que el candidato marque cuáles desea enviar.
+
+### 5. Perfil profesional tipo LinkedIn y vista completa para reclutadores
+
+- **Candidato**: cuenta con foto de portada (`banner`) personalizable desde su dispositivo,
+  ubicación, disponibilidad, **expectativa salarial bruta anual** (`expectativaSalarial`) y
+  preferencias de modalidad.
+- **Reclutador**: puede abrir el perfil completo de cualquier candidato desde sus ofertas o desde
+  el chat para consultar su portada, compatibilidad con la vacante, expectativa salarial, resumen
+  profesional IA, habilidades declaradas, lectura/descarga del CV en PDF, selección para entrevista
+  y chat directo en tiempo real.
 
 ---
 
@@ -66,13 +118,9 @@ con contador de mensajes sin leer.
 
 | Parte | Estado |
 |---|---|
-| **Backend** (API REST + base de datos) | Funcional: 10 módulos, 13 tablas, 6 migraciones, autenticación y tests |
-| **Frontend** (app Flutter) | Andamiaje generado por `flutter create`; la UI todavía no está implementada |
-| **Pasarela de pago** | Modelada en base de datos, sin integración real con Stripe / Google Play |
-
-El trabajo hecho hasta ahora se ha concentrado en el servidor: estructura por módulos, esquema
-de datos con sus restricciones a nivel de base de datos, lógica de negocio y despliegue local
-en Docker.
+| **Backend** (API REST + PostgreSQL + IA) | Funcional: 13 módulos, 15 tablas, migraciones Prisma, cron diario del autopiloto, integración con Groq LLM y fallback determinista |
+| **Frontend** (app Flutter multiplataforma) | Funcional: sistema de diseño propio (`DESIGN.md` + `animation.md`), flujos completos de candidato y reclutador, y 51 tests de widgets |
+| **Suscripciones y pagos** | Gestión completa de planes mensual/anual, cambio de plan, cancelación y reactivación |
 
 ---
 
@@ -80,41 +128,48 @@ en Docker.
 
 ```
 JIn1Step/
-├── jin1step/            # Aplicación móvil (Flutter · Dart)
-│   ├── lib/main.dart
-│   ├── android/ ios/ web/ windows/ macos/ linux/
-│   └── pubspec.yaml
+├── docs/
+│   └── screenshots/             # Capturas de pantalla de la aplicación
 │
-└── jin1step.server/     # API REST (Node.js · TypeScript · Express 5)
+├── jin1step/                    # Aplicación multiplataforma (Flutter · Dart)
+│   ├── assets/
+│   │   ├── design/              # Especificación visual (DESIGN.md y animation.md)
+│   │   └── images/              # Logotipos de marca
+│   ├── lib/
+│   │   ├── core/                # Cliente HTTP (Dio + JWT), tema y tokens de diseño
+│   │   ├── screens/             # Pantallas (Home, Ofertas, OfertaDetalle, Autopiloto,
+│   │   │                        #   Chat, Mi CV, Perfil, PerfilCandidato, Reclutador…)
+│   │   ├── services/            # Servicios de API (Auth, Candidato, Ofertas, Chat, etc.)
+│   │   ├── widgets/             # Componentes del sistema de diseño (Panel, MatchIndicator…)
+│   │   └── main.dart
+│   └── test/                    # Suite de 51 tests de widgets e interfaz
+│
+└── jin1step.server/             # API REST (Node.js · TypeScript · Express 5)
     ├── prisma/
-    │   ├── schema.prisma          # 13 modelos + 8 enums
-    │   ├── migrations/            # 6 migraciones
-    │   └── seed-habilidades.ts    # catálogo inicial de habilidades
+    │   ├── schema.prisma        # Esquema de base de datos PostgreSQL
+    │   ├── migrations/          # Historial de migraciones SQL
+    │   └── seed-habilidades.ts  # Catálogo inicial de habilidades
     ├── src/
-    │   ├── app.ts                 # creación de la app Express
-    │   ├── server.ts              # arranque del servidor
-    │   ├── config/env.ts          # variables de entorno validadas al arrancar
-    │   ├── lib/                   # cliente Prisma y HttpError
-    │   ├── middlewares/           # auth (JWT + roles), validación Zod, errores
-    │   ├── routes/index.ts        # punto único donde se montan los routers
-    │   └── modules/               # un módulo por dominio
-    │       ├── auth/              #   registro, login, login con Google
-    │       ├── cv/                #   subida de PDF y extracción de habilidades
-    │       ├── habilidad/         #   catálogo y habilidades de cada CV
-    │       ├── empresa/           #   alta y consulta de empresas
-    │       ├── ofertas/           #   publicación y búsqueda de ofertas
-    │       ├── postulacion/       #   postulaciones + cálculo del match
+    │   ├── app.ts               # Configuración de Express, CORS, Helmet y rutas
+    │   ├── server.ts            # Arranque del servidor y planificador cron
+    │   ├── jobs/                # Tarea programada diaria del autopiloto
+    │   └── modules/             # Arquitectura modular por dominio
+    │       ├── auth/
+    │       ├── CandidatoPerfil/ # Ubicación, disponibilidad, expectativa salarial y banner
+    │       ├── cv/              # Subida de PDF, ATS score, habilidades y resumen IA
+    │       ├── habilidad/
+    │       ├── empresa/
+    │       ├── ofertas/         # Publicación, búsqueda y rango salarial
+    │       ├── postulacion/     # Postulaciones + motor de matching híbrido + IA
     │       ├── preferencias_autopilot/
     │       ├── postulaciones_autopilot/
-    │       ├── conversacion/      #   hilos de chat
-    │       ├── mensaje/           #   mensajes y contador de no leídos
-    │       └── suscripcion/       #   planes y estado de la suscripción
+    │       ├── conversacion/
+    │       ├── mensaje/
+    │       ├── notificacion/
+    │       └── suscripcion/
     ├── docker-compose.yml
     └── package.json
 ```
-
-Cada módulo sigue siempre el mismo patrón: `*.routes.ts` (URLs y permisos) →
-`*.controller.ts` (HTTP) → `*.service.ts` (lógica de negocio) + `*.schema.ts` (validación Zod).
 
 ---
 
@@ -129,70 +184,46 @@ Cada módulo sigue siempre el mismo patrón: `*.routes.ts` (URLs y permisos) →
 | ORM | Prisma 6 |
 | Base de datos | PostgreSQL 16 |
 | Validación | Zod 4 |
+| IA / LLM | Groq API (`llama-3.3-70b-versatile`) con fallback heurístico sin latencia |
 | Autenticación | JWT (`jsonwebtoken`) + bcrypt + Google Identity (`google-auth-library`) |
-| Subida de archivos | Multer (en memoria) + `pdf-parse` para extraer el texto |
+| Subida de archivos | Multer + `pdf-parse` para extracción de texto de CVs |
 | Seguridad | Helmet, CORS, `express-rate-limit` |
-| Logs | Morgan |
 | Tests | Vitest |
-| Entorno | Docker Compose |
 
 **Frontend**
 
 | Pieza | Tecnología |
 |---|---|
 | Framework | Flutter (Dart SDK ^3.10.7) |
+| Tipografía | `Bricolage Grotesque` (interfaz) + `Geist Mono` (cifras tabulares y métricas) |
+| Red y archivos | `dio`, `file_picker`, `shared_preferences`, `google_sign_in` |
 | Plataformas | Android, iOS, Web, Windows, macOS, Linux |
 
 ---
 
 ## Base de datos
 
-**Un solo motor: PostgreSQL 16**, levantado con Docker Compose y accedido con Prisma.
-No hay segunda base de datos ni caché: el esquema completo vive en
+Un único motor **PostgreSQL 16** gestionado con Prisma en
 [`jin1step.server/prisma/schema.prisma`](jin1step.server/prisma/schema.prisma).
 
-### Tablas (13)
+### Tablas principales
 
-| Tabla | Para qué sirve |
+| Tabla | Propósito |
 |---|---|
-| `usuarios` | Cuentas. Guarda `password_hash` (bcrypt, 12 rondas) y/o `google_id`; el hash es opcional para quien entra solo con Google |
-| `candidatos_perfil` | Datos extra del candidato (ubicación, disponibilidad). Relación 1:1 con `usuarios` |
-| `empresas` | Empresas que publican ofertas |
-| `cvs` | Currículums: título, ruta del archivo, texto ya extraído y `ats_score` |
-| `habilidades` | Catálogo global de habilidades. Vocabulario cerrado y único |
-| `cv_habilidades` | Puente N:M — qué habilidades tiene cada CV y con qué nivel |
-| `ofertas` | Ofertas de empleo: título, descripción, modalidad y estado |
-| `oferta_requisitos` | Puente N:M — qué habilidades pide cada oferta y si son obligatorias |
-| `postulaciones` | Cada CV aplicado a una oferta, con su `match_score` y si lo hizo la IA |
-| `conversaciones` | Hilos de chat candidato ↔ reclutador, opcionalmente sobre una oferta |
-| `mensajes` | Mensajes de cada hilo, con marca de leído |
-| `suscripciones` | Histórico de suscripciones al autopiloto (plan, estado, precio, fechas) |
-| `preferencias_autopilot` | Configuración del autopiloto de cada usuario |
-
-### Enums (8)
-
-`Rol` · `Modalidad` · `EstadoOferta` · `EstadoPostulacion` · `NivelHabilidad` ·
-`EstadoSuscripcion` · `ProveedorPago` · `TipoPlan`
-
-Los campos de valores cerrados son enums de PostgreSQL, no cadenas libres: la garantía vive en
-la base de datos y no solo en la capa de validación.
-
-### Restricciones que protegen la lógica
-
-Varias reglas de negocio están reforzadas en el propio motor, para que sigan cumpliéndose
-aunque falle el código de aplicación:
-
-- `@@unique([cv_id, oferta_id])` en `postulaciones` — un mismo CV no puede postularse dos
-  veces a la misma oferta. Es la red de seguridad contra un autopiloto que se ejecute dos veces.
-- **Índice único parcial** `suscripciones_una_activa_por_usuario` — un usuario solo puede
-  tener una suscripción `ACTIVA` a la vez, pero sí un histórico ilimitado de canceladas o
-  vencidas. Evita el cobro duplicado cuando la pasarela reenvía un webhook.
-- `id_externo` único y opcional en `suscripciones` — corta en origen los webhooks repetidos
-  (en PostgreSQL un índice único admite varios `NULL`, así que las altas sin pagar no chocan).
-- `preferencias_autopilot.usuario_id` es clave primaria — una única configuración por usuario,
-  imposible tener dos contradictorias.
-- Borrados en cascada donde el dato no tiene sentido sin su dueño, y `SET NULL` donde sí lo
-  tiene: si el candidato borra el CV asignado al autopiloto, conserva su configuración.
+| `usuarios` | Cuentas (`CANDIDATO`, `RECLUTADOR`, `ADMIN`), hash bcrypt y/o `google_id` |
+| `candidatos_perfil` | Perfil profesional 1:1: `ubicacion`, `disponibilidad`, `expectativa_salarial` (€/año) y `banner` (imagen de portada) |
+| `empresas` | Empresas creadas por los reclutadores |
+| `cvs` | Currículums en PDF, texto extraído, `ats_score` y `perfil_ia` (JSON) |
+| `habilidades` | Catálogo normalizado de habilidades técnicas, metodologías e idiomas |
+| `cv_habilidades` | Habilidades asociadas a cada CV con su `NivelHabilidad` |
+| `ofertas` | Vacantes con título, descripción, modalidad, `salario` y `EstadoOferta` |
+| `oferta_requisitos` | Habilidades requeridas por oferta (`obligatorio: true | false`) |
+| `postulaciones` | Candidaturas con `match_score`, `postulado_por_ia`, `puntuacion_ia`, `motivo_ia` y `carta_ia` |
+| `preferencias_autopilot` | Configuración por candidato (`activo`, `revisar_antes`, `cv_id`, `score_minimo`, `max_por_dia`) |
+| `ejecuciones_autopilot` | Registro de auditoría de cada ejecución manual o automática del autopiloto |
+| `conversaciones` / `mensajes` | Mensajería directa candidato ↔ reclutador con estado de lectura |
+| `notificaciones` | Alertas de actividad, entrevistas y envíos del autopiloto |
+| `suscripciones` | Estado e historial de planes de suscripción (`MENSUAL` / `ANUAL`) |
 
 ---
 
@@ -202,105 +233,49 @@ Base: `http://localhost:3000/api` · Autenticación: `Authorization: Bearer <acc
 
 | Método | Ruta | Rol | Descripción |
 |---|---|---|---|
-| `GET` | `/health` | — | Comprobación de vida |
-| `POST` | `/auth/register` | — | Alta de usuario |
-| `POST` | `/auth/login` | — | Login con email y contraseña |
-| `POST` | `/auth/login/google` | — | Login con Google |
-| `POST` | `/cv` | auth | Subir CV en PDF (máx. 5 MB) y detectar habilidades |
-| `GET` | `/cv` | auth | Listar mis CVs |
-| `GET` | `/cv/:id` | auth | Ver un CV |
-| `DELETE` | `/cv/:id` | auth | Borrar un CV |
-| `GET` | `/habilidades` | auth | Catálogo de habilidades |
-| `GET` | `/habilidades/cv/:cvId` | candidato | Habilidades de un CV |
-| `POST` | `/habilidades/cv/:cvId` | candidato | Añadir habilidad a un CV |
-| `PATCH` | `/habilidades/cv/:cvId/:habilidadId` | candidato | Cambiar el nivel |
-| `DELETE` | `/habilidades/cv/:cvId/:habilidadId` | candidato | Quitar habilidad |
-| `POST` | `/empresas` | reclutador | Crear empresa |
-| `GET` | `/empresas` | reclutador | Listar empresas |
-| `GET` | `/ofertas` | auth | Buscar ofertas |
-| `GET` | `/ofertas/mias` | reclutador | Mis ofertas publicadas |
-| `GET` | `/ofertas/:id` | auth | Ver una oferta |
-| `POST` | `/ofertas` | reclutador | Publicar oferta |
-| `PATCH` | `/ofertas/:id` | reclutador | Editar oferta |
-| `POST` | `/postulaciones` | candidato | Postularse a una oferta |
-| `GET` | `/postulaciones/mias` | candidato | Mis postulaciones |
-| `POST` | `/postulaciones/simular-match` | candidato | Ver el match **sin** postularse |
-| `GET` | `/postulaciones/oferta/:ofertaId` | reclutador | Candidatos de una oferta |
-| `PATCH` | `/postulaciones/:id` | reclutador | Cambiar estado (vista, entrevista, rechazada…) |
-| `GET` | `/preferencias-autopilot` | candidato | Ver configuración del autopiloto |
-| `PATCH` | `/preferencias-autopilot` | candidato | Cambiar configuración |
-| `POST` | `/postulaciones-autopilot/ejecutar` | candidato | Lanzar una pasada del autopiloto |
-| `GET` | `/conversaciones` | candidato · reclutador | Bandeja de entrada |
-| `POST` | `/conversaciones` | candidato · reclutador | Abrir (o recuperar) una conversación |
-| `GET` | `/conversaciones/:id/mensajes` | candidato · reclutador | Mensajes del hilo |
-| `POST` | `/conversaciones/:id/mensajes` | candidato · reclutador | Enviar mensaje |
-| `GET` | `/mensajes/sin-leer` | candidato · reclutador | Contador global de no leídos |
-
-**Autenticación.** El login devuelve un `accessToken` (15 min) y un `refreshToken` (7 días).
-Las rutas de `/auth` están limitadas a 10 intentos cada 15 minutos por IP.
-`requireAuth` valida firma y caducidad; `requireRol` distingue el 401 (no identificado) del
-403 (identificado pero sin permiso).
-
-**Errores.** Todos pasan por un manejador único que traduce `HttpError` y errores de Prisma a
-su código HTTP correspondiente, con mensajes en castellano.
+| `GET` | `/health` | — | Estado del servidor |
+| `POST` | `/auth/register` · `/auth/login` · `/auth/login/google` | — | Registro e inicio de sesión |
+| `GET` · `PUT` | `/perfil-candidato/mio` | candidato | Consultar o actualizar ubicación, disponibilidad, expectativa salarial y banner |
+| `POST` · `DELETE` | `/perfil-candidato/mio/banner` | candidato | Subir o eliminar la foto de portada tipo LinkedIn |
+| `GET` | `/perfil-candidato/:candidatoId` | reclutador | Ver el perfil completo, resumen IA y CVs de un candidato |
+| `POST` · `GET` · `DELETE` | `/cv` · `/cv/:id` | auth | Subir, listar, consultar o borrar CVs en PDF |
+| `GET` · `POST` · `PATCH` · `DELETE` | `/habilidades/cv/:cvId` | candidato | Gestionar habilidades y niveles de un CV |
+| `GET` · `POST` · `PATCH` | `/ofertas` · `/ofertas/mias` · `/ofertas/:id` | auth / reclutador | Buscar, publicar y editar ofertas con salario y requisitos |
+| `POST` | `/postulaciones` | candidato | Postularse a una oferta calculando match híbrido |
+| `POST` | `/postulaciones/simular-match` | candidato | Simular puntuación y desglose sin postularse |
+| `GET` | `/postulaciones/mias` | candidato | Historial de candidaturas del usuario |
+| `GET` · `PATCH` | `/postulaciones/oferta/:ofertaId` · `/postulaciones/:id` | reclutador | Listar candidatos de una oferta y actualizar estado (`ENTREVISTA`, etc.) |
+| `GET` · `PATCH` | `/preferencias-autopilot` | candidato | Configurar el autopiloto |
+| `POST` | `/postulaciones-autopilot/previsualizar` | candidato | Previsualizar ofertas sugeridas antes de enviar |
+| `POST` | `/postulaciones-autopilot/ejecutar` | candidato | Ejecutar el autopiloto (todas o selección revisada) |
+| `GET` | `/postulaciones-autopilot/historial` | candidato | Historial de pasadas del autopiloto |
+| `GET` · `POST` | `/conversaciones` · `/conversaciones/:id/mensajes` | candidato · reclutador | Bandeja de entrada y envío de mensajes |
+| `GET` · `POST` · `PATCH` | `/suscripciones/mia` · `/suscripciones/activar-demo` · `/suscripciones/plan` | candidato | Gestión de la suscripción al autopiloto |
 
 ---
 
-## Cómo funciona el matching
+## Cómo funciona el matching híbrido
 
-El `matchScore` es **una fórmula, no un modelo de IA**, y es una decisión deliberada:
+El cálculo de compatibilidad ([`matching.service.ts`](jin1step.server/src/modules/postulacion/matching.service.ts) y [`oferta_detalle.dart`](jin1step/lib/screens/oferta_detalle.dart)) evalúa tanto los requisitos estructurados como el texto libre de la descripción:
 
-- **Coste** — con 1.000 CVs y 500 ofertas hay 500.000 combinaciones; a una llamada de LLM cada
-  una, un recálculo completo costaría cientos de euros. Comparar dos conjuntos es SQL.
-- **Explicabilidad** — se le puede decir al candidato *«te falta Docker, que era obligatorio»*.
-  Un LLM devuelve un 73 y no sabe justificarlo.
-- **Reproducibilidad** — el mismo CV y la misma oferta dan siempre el mismo resultado.
+$$\text{matchScore} = (\text{Obligatorias} \times 0{,}50) + (\text{Deseables} \times 0{,}20) + (\text{Descripción} \times 0{,}30)$$
 
-El cálculo compara las habilidades del CV con los requisitos de la oferta:
-
-```
-puntuación = (% requisitos obligatorios cubiertos × 0,7)
-           + (% requisitos deseables cubiertos    × 0,3)
-```
-
-Con dos matices: si la oferta solo tiene requisitos de un tipo, ese tipo se lleva el 100 % del
-peso (repartir 0,7/0,3 daría un máximo de 70), y una oferta sin requisitos puntúa 100 para no
-penalizar al candidato por un descuido del reclutador. Junto a la nota se devuelve siempre el
-desglose: obligatorias cubiertas, obligatorias que faltan, deseables cubiertas y deseables que
-faltan.
-
-La **detección de habilidades del CV** sigue el mismo criterio: busca en el texto los nombres
-del catálogo, normalizando mayúsculas y tildes y admitiendo sinónimos (`js` → JavaScript,
-`k8s` → Kubernetes, `postgres` → PostgreSQL…), con una expresión regular que evita falsos
-positivos como detectar «JS» dentro de «Node.js». Su límite conocido es que no entiende el
-contexto: *«no tengo experiencia en React»* cuenta como React. Si algún día hace falta, se
-sustituye solo esa función por un LLM y el resto del sistema no se entera.
+- **Redistribución automática de pesos**: si una oferta no tiene requisitos deseables o no incluye términos técnicos adicionales en su descripción, los pesos activos se normalizan automáticamente para que la puntuación máxima siga siendo 100 %.
+- **Extracción semántica en descripción**: detecta tecnologías, herramientas y metodologías mencionadas en el cuerpo de la oferta (normalizando tildes, mayúsculas y sinónimos como `k8s` → `Kubernetes` o `postgres` → `PostgreSQL`) y las compara con las habilidades declaradas y el texto completo del CV.
+- **Evaluación en memoria para el Autopiloto**: `calcularMatchEnMemoria` carga las habilidades y el texto del CV en una única consulta SQL y puntúa cientos de ofertas abiertas en milisegundos sin saturar el pool de conexiones de PostgreSQL.
 
 ---
 
 ## El autopiloto
 
-Una pasada de `POST /postulaciones-autopilot/ejecutar` hace esto, en orden:
+Cada ejecución de `POST /postulaciones-autopilot/ejecutar` (o su previsualización previa):
 
-1. **Comprueba la suscripción.** Sin una activa, `402 Payment Required` y no se mira nada más.
-2. **Lee las preferencias.** Si están desactivadas o no hay CV asignado, `409 Conflict`.
-3. **Reverifica el CV.** Entre configurarlo y ejecutar pueden pasar semanas y el usuario
-   puede haberlo borrado.
-4. **Aplica el tope diario.** Cuenta las postulaciones que la IA ya ha creado desde las 00:00
-   de hoy, no las de la sesión, para que dos ejecuciones no se salten el límite.
-5. **Busca ofertas abiertas** a las que el usuario no se haya postulado con **ninguno** de sus
-   CVs.
-6. **Puntúa, filtra por la nota mínima, ordena de mayor a menor** y se queda con las que caben
-   en el hueco restante del día.
-7. **Crea las postulaciones** con `postuladoPorIa: true`, estado `ENVIADA` y
-   `skipDuplicates` como última red contra ejecuciones solapadas.
-
-Nunca falla en silencio: si no crea nada, devuelve el motivo
-(`limite_diario_alcanzado`, `sin_ofertas_disponibles`, `sin_ofertas_sobre_score_minimo`).
-
-Valores por defecto: desactivado, puntuación mínima 70, máximo 5 postulaciones al día.
-El autopiloto **nunca se activa solo**: requiere consentimiento explícito, que queda registrado
-con fecha en `activado_en` / `revocado_en`.
+1. **Verifica la suscripción activa** (`402 Payment Required` si no existe).
+2. **Comprueba preferencias y CV asignado** (`409 Conflict` si está apagado o falta el CV).
+3. **Respeta el límite diario**: descuenta las postulaciones automáticas ya enviadas desde las `00:00` del día actual.
+4. **Evalúa ofertas abiertas en memoria** usando el motor de match híbrido, filtra por `scoreMinimo` y ordena de mayor a menor compatibilidad.
+5. **Enriquece con IA**: genera para cada candidatura una valoración de ajuste y una carta breve adaptada a la oferta (con fallback instantáneo si la API externa no está disponible).
+6. **Registra la ejecución y notifica al candidato** con el resumen de ofertas evaluadas y candidaturas enviadas.
 
 ---
 
@@ -308,59 +283,33 @@ con fecha en `activado_en` / `revocado_en`.
 
 ### Requisitos
 
-- Node.js 20 o superior
-- Docker Desktop (para PostgreSQL)
-- Flutter SDK (solo para la app móvil)
+- Node.js 20+
+- Docker Desktop (para PostgreSQL 16)
+- Flutter SDK ^3.10.7
 
-### Backend
+### 1. Backend
 
 ```bash
 cd jin1step.server
 
-# 1. Dependencias
+# Instalar dependencias
 npm install
 
-# 2. Variables de entorno
+# Configurar variables de entorno
 cp .env.example .env
-# Genera los dos secretos con:
-#   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 
-# 3. Base de datos en Docker
+# Levantar PostgreSQL en Docker
 docker compose up -d postgres
 
-# 4. Migraciones y catálogo de habilidades
+# Aplicar migraciones y poblar catálogo de habilidades
 npx prisma migrate dev
 npx ts-node --transpile-only prisma/seed-habilidades.ts
 
-# 5. Arrancar en desarrollo (recarga en caliente)
+# Arrancar servidor en desarrollo (http://localhost:3000)
 npm run dev
 ```
 
-Comprobación: `http://localhost:3000/api/health` debe responder `{"status":"ok"}`.
-
-**Variables de entorno**
-
-| Variable | Obligatoria | Descripción |
-|---|---|---|
-| `DATABASE_URL` | Sí | Cadena de conexión a PostgreSQL |
-| `JWT_SECRET` | Sí | Secreto para firmar el access token |
-| `JWT_REFRESH_SECRET` | Sí | Secreto para firmar el refresh token |
-| `PORT` | No | Puerto del servidor (3000 por defecto) |
-| `NODE_ENV` | No | `development` por defecto |
-| `GOOGLE_CLIENT_ID` | No | Necesaria solo para el login con Google |
-
-El servidor valida estas variables **al arrancar** y falla de inmediato con un mensaje claro si
-falta alguna obligatoria, en vez de reventar más tarde en la primera petición.
-
-**Otros comandos**
-
-```bash
-npm run build     # compila a dist/
-npm start         # ejecuta la versión compilada
-npx prisma studio # explorador visual de la base de datos
-```
-
-### App Flutter
+### 2. Frontend (Flutter)
 
 ```bash
 cd jin1step
@@ -372,53 +321,29 @@ flutter run
 
 ## Tests
 
+### Backend (Vitest + PostgreSQL)
+
 ```bash
 cd jin1step.server
-npm test          # una pasada
-npm run test:watch
+npm test
 ```
 
-Son **tests de integración**: hablan con PostgreSQL de verdad, no con un mock, porque buena
-parte de las reglas que hay que verificar (el índice único parcial de «una sola suscripción
-activa», las cascadas, los enums) viven en la base de datos y un mock las daría por buenas.
-Por eso se ejecutan en serie: dos suites creando y borrando filas a la vez se pisarían.
+### Frontend (Flutter Widget Tests)
 
-Cubren, de momento, los servicios de conversaciones, mensajes y suscripciones, además del
-esquema de validación de suscripciones.
+```bash
+cd jin1step
+flutter analyze
+flutter test
+```
+
+La suite de Flutter verifica las pantallas de Login, Registro, Inicio (KPIs, mejores matches,
+navegación), cálculo y desglose del Match Híbrido (50/20/30) en Detalle de Oferta, edición y
+vaciado de campos en Perfil del Candidato, y gestión de timeouts del Autopiloto.
 
 ---
 
 ## Decisiones de diseño
 
-- **Un módulo por dominio, siempre con la misma forma** (`routes → controller → service`, más
-  `schema` de validación). Añadir una funcionalidad es crear una carpeta y montarla en
-  `routes/index.ts`, no tocar un archivo compartido de 2.000 líneas.
-- **La validación se hace en el borde.** Zod valida el cuerpo antes de que llegue al
-  controlador, así que los servicios reciben datos con forma garantizada.
-- **El precio lo fija siempre el servidor.** El cliente elige plan (`MENSUAL` 5 € / `ANUAL`
-  50 €), nunca cuánto cuesta. Y solo un webhook firmado puede poner una suscripción en
-  `ACTIVA`: ni el cliente ni el endpoint de alta pueden hacerlo.
-- **El importe se guarda en céntimos** (entero), nunca en euros con decimales.
-- **Los PDFs se validan antes de escribirse.** Multer trabaja en memoria, el servicio extrae el
-  texto primero y solo entonces guarda el archivo; si el insert falla, borra el fichero para no
-  dejar huérfanos. El nombre del archivo lo genera el servidor, nunca el cliente (un
-  `originalname` como `../../.env` permitiría escribir fuera de la carpeta de subidas).
-- **Las habilidades se detectan al subir el CV, no al postularse**, para que el match sea una
-  comparación de conjuntos y no haya que releer el texto del CV en cada oferta.
-
----
-
-## Pendiente
-
-- Implementar la interfaz en Flutter y conectarla con la API.
-- Montar el router de suscripciones en `routes/index.ts`: el módulo está escrito pero todavía
-  no se expone.
-- Integrar la pasarela de pago real y su `POST /suscripciones/webhook`, que necesita
-  `express.raw()` antes del `express.json()` global para poder verificar la firma.
-- Añadir el `Dockerfile` del backend: `docker-compose.yml` ya declara el servicio `backend`
-  con `build: .`, así que hoy solo se levanta el contenedor de PostgreSQL.
-- Servir los CVs subidos (hoy se guardan en disco local en `uploads/`; el objetivo es
-  almacenamiento externo tipo S3 o Supabase Storage).
-- Programar el autopiloto con un cron en vez de dispararlo a mano.
-- Calcular el `ats_score` del CV, que ya está en el modelo pero aún no se rellena.
-- Ampliar la cobertura de tests a CVs, ofertas, postulaciones y matching.
+- **Estética «libro de cuentas» (`DESIGN.md`)**: fondos neutros (`#F2F4F7` / `#FFFFFF`), bordes de `1px` sin sombras innecesarias, tipografía `Bricolage Grotesque` para lectura y `Geist Mono` con cifras tabulares para porcentajes, salarios y métricas.
+- **Movimiento funcional (`animation.md`)**: transiciones rápidas (`150–200 ms`, curvas `easeOut` / `easeOps`) y soporte completo para preferencia manual o del sistema de **reducción de movimiento**.
+- **Arquitectura modular estricta en el servidor**: cada dominio encapsula `routes → controller → service → schema` con validación Zod en la frontera HTTP y restricciones de integridad en PostgreSQL (`@@unique([cv_id, oferta_id])`, índice único parcial para una sola suscripción activa por usuario).

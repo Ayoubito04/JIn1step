@@ -228,8 +228,8 @@ class ListRow extends StatelessWidget {
       button: true,
       child: InkWell(
         onTap: onTap,
-        hoverColor: AppColors.rule,
-        highlightColor: AppColors.rule,
+        hoverColor: AppColors.active,
+        highlightColor: AppColors.active,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: AppSpacing.tap),
           child: contenido,
@@ -240,29 +240,57 @@ class ListRow extends StatelessWidget {
 }
 
 class KpiItem {
-  const KpiItem(this.label, this.value);
+  const KpiItem(this.label, this.value, {this.onTap});
 
   final String label;
   final String value;
+  final VoidCallback? onTap;
 }
 
-/// Cuadrícula 2×2 dividida por líneas de 1 px. Sin iconos ni deltas.
+/// Cuadrícula 2×2 dividida por líneas `rule` de 1 px. Cuando una celda navega
+/// a una vista de detalle incluye un chevron de 16 px arriba a la derecha y
+/// estado presionado `active`.
 class KpiGrid extends StatelessWidget {
   const KpiGrid({super.key, required this.items});
 
   final List<KpiItem> items;
 
-  Widget _celda(KpiItem item) => Padding(
-    padding: const EdgeInsets.all(AppSpacing.gap),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(item.label, style: AppText.meta),
-        const SizedBox(height: 4),
-        Text(item.value, style: AppText.kpi),
-      ],
-    ),
-  );
+  Widget _celda(KpiItem item) {
+    final contenido = Padding(
+      padding: const EdgeInsets.all(AppSpacing.gap),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(item.label, style: AppText.meta)),
+              if (item.onTap != null)
+                const Icon(
+                  Icons.chevron_right,
+                  size: 16,
+                  color: AppColors.muted,
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(item.value, style: AppText.kpi),
+        ],
+      ),
+    );
+    if (item.onTap == null) return contenido;
+    return Semantics(
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: item.onTap,
+          hoverColor: AppColors.active,
+          highlightColor: AppColors.active,
+          child: contenido,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -328,20 +356,48 @@ class Steps extends StatefulWidget {
 class _StepsState extends State<Steps> with SingleTickerProviderStateMixin {
   AnimationController? _controller;
   bool _arrancado = false;
+  int _desde = 0;
+  late int _hasta = _cuenta;
 
   int get _cuenta => widget.total == 3 ? 3 : 5;
+
+  void _iniciarAnimacion({required int desde, required int hasta}) {
+    _desde = desde;
+    _hasta = hasta;
+    final cantidad = (hasta - desde).clamp(1, _cuenta);
+    // Con movimiento reducido solo un fundido de 150 ms.
+    final duracion = _sinMovimiento(context)
+        ? Motion.fast
+        : Motion.base + Motion.stagger * (cantidad - 1);
+    final controller = _controller ??= AnimationController(vsync: this);
+    controller
+      ..duration = duracion
+      ..forward(from: 0);
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!widget.animar || _arrancado) return;
     _arrancado = true;
-    // Con movimiento reducido solo un fundido de 150 ms.
-    final duracion = _sinMovimiento(context)
-        ? Motion.fast
-        : Motion.base + Motion.stagger * (_cuenta - 1);
-    _controller = AnimationController(vsync: this, duration: duracion)
-      ..forward();
+    _iniciarAnimacion(desde: 0, hasta: _cuenta);
+  }
+
+  @override
+  void didUpdateWidget(covariant Steps oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.animar) return;
+    if (!oldWidget.animar && !_arrancado) {
+      _arrancado = true;
+      _iniciarAnimacion(desde: 0, hasta: _cuenta);
+      return;
+    }
+    if (widget.filled > oldWidget.filled) {
+      _iniciarAnimacion(
+        desde: oldWidget.filled.clamp(0, _cuenta),
+        hasta: widget.filled.clamp(0, _cuenta),
+      );
+    }
   }
 
   @override
@@ -352,13 +408,15 @@ class _StepsState extends State<Steps> with SingleTickerProviderStateMixin {
 
   /// Progreso (0..1) de la barra [i], con su retraso escalonado.
   double _progreso(int i) {
+    if (i < _desde || i >= _hasta) return 1;
     final controller = _controller!;
     final total = controller.duration!.inMicroseconds;
     if (_sinMovimiento(context)) {
       return Motion.easeOut.transform(controller.value);
     }
-    final inicio = (Motion.stagger * i).inMicroseconds / total;
-    final fin = (Motion.stagger * i + Motion.base).inMicroseconds / total;
+    final orden = i - _desde;
+    final inicio = (Motion.stagger * orden).inMicroseconds / total;
+    final fin = (Motion.stagger * orden + Motion.base).inMicroseconds / total;
     final t = ((controller.value - inicio) / (fin - inicio)).clamp(0.0, 1.0);
     return Motion.easeOut.transform(t);
   }
@@ -366,7 +424,7 @@ class _StepsState extends State<Steps> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final alturas = widget.total == 3
-        ? const [4.0, 10.0, 16.0]
+        ? const [6.0, 11.0, 16.0]
         : const [4.0, 7.0, 10.0, 13.0, 16.0];
 
     Widget barra(int i, double t) {
@@ -485,7 +543,9 @@ class StatusTag extends StatelessWidget {
   }
 }
 
-/// Aviso en bloque (402, 409, errores de formulario) con el par pálido.
+/// Bloque de aviso contextual a nivel de pantalla (`InlineNotice`, radio 8,
+/// relleno 12×16, borde de 1 px). Variantes: `warning`, `error` (`negative`) y
+/// `success` (`positive`).
 class Notice extends StatelessWidget {
   const Notice({
     super.key,
@@ -507,7 +567,7 @@ class Notice extends StatelessWidget {
       StatusVariant.success => (
         AppColors.tagSuccessBg,
         AppColors.tagSuccessText,
-        AppColors.tagSuccessBg,
+        AppColors.tagSuccessBorder,
       ),
       StatusVariant.warning => (
         AppColors.tagWarningBg,
@@ -517,23 +577,32 @@ class Notice extends StatelessWidget {
       StatusVariant.error => (
         AppColors.tagErrorBg,
         AppColors.tagErrorText,
-        AppColors.tagErrorBg,
+        AppColors.tagErrorBorder,
       ),
     };
     return Semantics(
       liveRegion: true,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
           color: fondo,
-          borderRadius: BorderRadius.circular(AppRadii.control),
+          borderRadius: BorderRadius.circular(AppRadii.panel),
           border: Border.all(color: borde),
         ),
         child: Text(message, style: AppText.body.copyWith(color: texto)),
       ),
     );
   }
+}
+
+/// Alias explícito del diseño (`InlineNotice`) para avisos contextuales.
+class InlineNotice extends Notice {
+  const InlineNotice({
+    super.key,
+    required super.message,
+    super.variant = StatusVariant.warning,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -640,13 +709,19 @@ class PrimaryButton extends StatelessWidget {
   final String? loadingLabel;
 
   @override
-  Widget build(BuildContext context) => _BotonBase(
-    label: loading ? (loadingLabel ?? label) : label,
-    onPressed: loading ? null : onPressed,
-    leading: loading ? const AppSpinner(color: AppColors.white) : leading,
-    fondo: AppColors.ink,
-    texto: AppColors.white,
-    inactivoVisual: false,
+  Widget build(BuildContext context) => AnimatedOpacity(
+    opacity: loading ? 0.88 : 1.0,
+    duration: _sinMovimiento(context) ? Duration.zero : Motion.press,
+    child: _BotonBase(
+      label: loading ? (loadingLabel ?? label) : label,
+      onPressed: loading ? null : onPressed,
+      leading: loading
+          ? const AppSpinner(size: 16, color: AppColors.white)
+          : leading,
+      fondo: AppColors.ink,
+      texto: AppColors.white,
+      inactivoVisual: false,
+    ),
   );
 }
 
@@ -933,6 +1008,8 @@ class AppIconButton extends StatelessWidget {
           ),
           child: InkWell(
             onTap: onPressed,
+            hoverColor: AppColors.active,
+            highlightColor: AppColors.active,
             customBorder: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadii.control),
             ),
@@ -1009,11 +1086,7 @@ class _Contador extends StatelessWidget {
     ),
     child: Text(
       '$count',
-      style: AppText.metaStrong.copyWith(
-        color: AppColors.white,
-        fontWeight: FontWeight.w600,
-        height: 1,
-      ),
+      style: AppText.badgeMono,
     ),
   );
 }

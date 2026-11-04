@@ -80,6 +80,8 @@ class _OfertasState extends State<Ofertas> {
       if (texto.isEmpty) return true;
 
       final titulo = (oferta['titulo'] as String? ?? '').toLowerCase();
+      final descripcion = (oferta['descripcion'] as String? ?? '').toLowerCase();
+      final salario = (oferta['salario'] as String? ?? '').toLowerCase();
       final nombreEmpresa = (empresa?['nombre'] as String? ?? '').toLowerCase();
       final ubicacion = (empresa?['ubicacion'] as String? ?? '').toLowerCase();
       final requisitos = oferta['requisitos'] as List? ?? const [];
@@ -92,6 +94,8 @@ class _OfertasState extends State<Ofertas> {
       );
 
       return titulo.contains(texto) ||
+          descripcion.contains(texto) ||
+          salario.contains(texto) ||
           nombreEmpresa.contains(texto) ||
           ubicacion.contains(texto) ||
           habilidades.any((habilidad) => habilidad.contains(texto));
@@ -197,11 +201,17 @@ class _OfertasState extends State<Ofertas> {
     final titulo = oferta['titulo'] as String? ?? 'Sin título';
     final nombreEmpresa = empresa?['nombre'] as String? ?? 'Empresa';
     final modalidad = oferta['modalidad'] as String?;
+    final salario = (oferta['salario'] as String?)?.trim();
+    final lineaEmpresa = [
+      nombreEmpresa,
+      if (modalidad != null) etiquetaModalidad(modalidad),
+      if (salario != null && salario.isNotEmpty) salario,
+    ].join(' · ');
 
     return ListRow(
       title: titulo,
       lines: [
-        '$nombreEmpresa${modalidad == null ? '' : ' · ${etiquetaModalidad(modalidad)}'}',
+        lineaEmpresa,
         _resumen(match),
       ],
       trailing: MatchIndicator(match: match.score),
@@ -217,11 +227,13 @@ class _OfertasState extends State<Ofertas> {
     );
   }
 
-  /// Obligatorias cubiertas y, si falta algo, el primer requisito que falta.
+  /// Obligatorias cubiertas, encaje con la descripción y primer requisito que falta.
   String _resumen(MatchOferta match) {
     final partes = [
       if (match.obligatoriasTotal > 0)
         '${match.obligatoriasCubiertas} de ${match.obligatoriasTotal} obligatorias',
+      if (match.descripcionTotal > 0)
+        '${match.porcentajeDescripcion} % descripción',
       if (match.faltantes.isNotEmpty) 'Falta ${match.faltantes.first.nombre}',
     ];
     return partes.isEmpty ? 'Sin requisitos definidos' : partes.join(' · ');

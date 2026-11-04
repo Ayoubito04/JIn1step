@@ -128,7 +128,11 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_prepararGoogle());
+    if (widget.auth != null) {
+      _googlePreparado = true;
+    } else {
+      unawaited(_prepararGoogle());
+    }
   }
 
   Future<void> _prepararGoogle() async {
@@ -387,41 +391,39 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _botonGoogle() {
-    if (kIsWeb) {
-      if (googleWebClientId.isEmpty) {
-        return Text(
-          _errorGoogle ??
-              'Google estará disponible al configurar el cliente web.',
-          textAlign: TextAlign.center,
-          style: AppText.meta,
-        );
-      }
-      if (_errorGoogle != null) {
-        return Notice(message: _errorGoogle!, variant: StatusVariant.error);
-      }
-      if (!_googlePreparado) {
-        return const SizedBox(
-          height: AppSpacing.field,
-          child: Center(child: AppSpinner()),
-        );
-      }
-      return Center(
-        child: SizedBox(
-          width: double.infinity,
-          height: 50,
-          child: IgnorePointer(
-            ignoring: _cargando,
-            child: google_web.buildGoogleSignInWebButton(),
+    // DESIGN.md 3.2.7 y 5: Botón de Google siempre como SecondaryButton con el
+    // logo multicolor oficial y el texto «Entrar con Google».
+    final botonDiseno = SecondaryButton(
+      label: 'Entrar con Google',
+      leading: const GoogleLogoMark(),
+      onPressed: kIsWeb
+          ? () {
+              if (_errorGoogle != null) {
+                setState(() => _error = _errorGoogle);
+              }
+            }
+          : _iniciarSesionGoogle,
+    );
+
+    if (kIsWeb && _googlePreparado && _errorGoogle == null) {
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          botonDiseno,
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.01,
+              child: IgnorePointer(
+                ignoring: _cargando,
+                child: google_web.buildGoogleSignInWebButton(),
+              ),
+            ),
           ),
-        ),
+        ],
       );
     }
 
-    return SecondaryButton(
-      label: 'Entrar con Google',
-      leading: const GoogleLogoMark(),
-      onPressed: _iniciarSesionGoogle,
-    );
+    return botonDiseno;
   }
 
   Widget _campoEmail() {

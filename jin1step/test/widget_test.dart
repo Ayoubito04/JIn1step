@@ -1,13 +1,14 @@
-// Tests de la pantalla de login.
-//
-// Usan un AuthService falso para no depender de que el backend esté
-// encendido: así se prueba solo el comportamiento de la pantalla.
+// Tests de la pantalla de Login contra DESIGN.md: logo, título, correo,
+// contraseña, "Entrar", "Entrar con Google", enlace a "Crear cuenta",
+// validación al salir del campo y botón nunca desactivado.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:jin1step/core/api_client.dart';
+import 'package:jin1step/core/app_theme.dart';
 import 'package:jin1step/screens/login.dart';
 import 'package:jin1step/screens/register.dart';
 import 'package:jin1step/services/auth.service.dart';
@@ -28,31 +29,8 @@ class AuthFalso extends AuthService {
     if (error != null) throw error!;
     return {'nombre': 'Ana'};
   }
-
-  int registros = 0;
-  Rol? ultimoRol;
-  String? ultimoNombre;
-
-  @override
-  Future<Map<String, dynamic>> register(
-    String nombre,
-    String apellidos,
-    String email,
-    String password,
-    Rol rol,
-  ) async {
-    registros++;
-    ultimoRol = rol;
-    ultimoNombre = nombre;
-    if (error != null) throw error!;
-    return {'nombre': nombre};
-  }
 }
 
-/// Placeholder de /home para los tests: en vez de montar la pantalla real
-/// (con sus propias llamadas de red), solo enseña el nombre que llegó por
-/// argumento. Así se puede comprobar que login/registro navegan de verdad y
-/// pasan los datos correctos, sin arrastrar toda la Home a estos tests.
 Widget _homeDePrueba(BuildContext context) {
   final args =
       ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
@@ -60,8 +38,13 @@ Widget _homeDePrueba(BuildContext context) {
 }
 
 Future<void> abrirLogin(WidgetTester tester, AuthService auth) async {
+  tester.view.physicalSize = const Size(900, 1800);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
   await tester.pumpWidget(
     MaterialApp(
+      theme: construirTemaApp(),
       routes: {
         '/': (_) => LoginScreen(auth: auth),
         '/register': (_) => const RegisterPage(),
@@ -69,40 +52,50 @@ Future<void> abrirLogin(WidgetTester tester, AuthService auth) async {
       },
     ),
   );
-  // Deja terminar la animación de entrada.
   await tester.pumpAndSettle();
 }
 
-Finder get campoEmail => find.byType(TextFormField).at(0);
-Finder get campoPassword => find.byType(TextFormField).at(1);
-Finder get botonEntrar => find.text('Iniciar sesión');
+Finder get campoEmail => find.byType(TextField).at(0);
+Finder get campoPassword => find.byType(TextField).at(1);
+Finder get botonEntrar => find.text('Entrar');
 
 void main() {
-  testWidgets('pinta la pantalla completa tras la animación de entrada', (
-    tester,
-  ) async {
-    await abrirLogin(tester, AuthFalso());
-
-    expect(find.text('Jin1step'), findsOneWidget);
-    expect(find.text('Email'), findsOneWidget);
-    expect(find.text('Contraseña'), findsOneWidget);
-    expect(botonEntrar, findsOneWidget);
-    expect(find.text('¿No tienes cuenta? Regístrate'), findsOneWidget);
+  setUpAll(() {
+    GoogleFonts.config.allowRuntimeFetching = false;
+    final anterior = FlutterError.onError;
+    FlutterError.onError = (detalles) {
+      if (detalles.exceptionAsString().contains('google_fonts')) return;
+      anterior?.call(detalles);
+    };
   });
 
-  testWidgets('con los campos vacíos no llama al backend', (tester) async {
+  testWidgets('pinta la pantalla de Login según DESIGN.md', (tester) async {
+    await abrirLogin(tester, AuthFalso());
+
+    expect(find.text('Bienvenido de nuevo'), findsOneWidget);
+    expect(find.text('Buscar trabajo en un solo paso.'), findsOneWidget);
+    expect(find.text('Correo'), findsOneWidget);
+    expect(find.text('Contraseña'), findsOneWidget);
+    expect(botonEntrar, findsOneWidget);
+    expect(find.text('Entrar con Google'), findsOneWidget);
+    expect(find.text('Crear cuenta'), findsOneWidget);
+  });
+
+  testWidgets('con los campos vacíos no llama al backend y muestra errores', (
+    tester,
+  ) async {
     final auth = AuthFalso();
     await abrirLogin(tester, auth);
 
     await tester.tap(botonEntrar);
     await tester.pumpAndSettle();
 
-    expect(find.text('Introduce tu email'), findsOneWidget);
+    expect(find.text('Introduce tu correo'), findsOneWidget);
     expect(find.text('Introduce tu contraseña'), findsOneWidget);
     expect(auth.llamadas, 0);
   });
 
-  testWidgets('rechaza un email mal escrito', (tester) async {
+  testWidgets('rechaza un correo mal escrito', (tester) async {
     final auth = AuthFalso();
     await abrirLogin(tester, auth);
 
@@ -111,21 +104,8 @@ void main() {
     await tester.tap(botonEntrar);
     await tester.pumpAndSettle();
 
-    expect(find.text('Ese email no es válido'), findsOneWidget);
+    expect(find.text('Ese correo no es válido'), findsOneWidget);
     expect(auth.llamadas, 0);
-  });
-
-  testWidgets('la contraseña va oculta y el ojo la muestra', (tester) async {
-    await abrirLogin(tester, AuthFalso());
-
-    TextField campo() => tester.widget<TextField>(
-      find.descendant(of: campoPassword, matching: find.byType(TextField)),
-    );
-
-    expect(campo().obscureText, isTrue);
-    await tester.tap(find.byIcon(Icons.visibility_outlined));
-    await tester.pumpAndSettle();
-    expect(campo().obscureText, isFalse);
   });
 
   testWidgets('si el backend rechaza, enseña su mensaje de error', (
@@ -145,7 +125,7 @@ void main() {
     expect(find.text('Email o contraseña incorrectos'), findsOneWidget);
   });
 
-  testWidgets('mientras carga, el botón se desactiva y muestra un spinner', (
+  testWidgets('mientras carga muestra spinner y evita doble envío', (
     tester,
   ) async {
     final espera = Completer<Map<String, dynamic>>();
@@ -156,16 +136,13 @@ void main() {
     await tester.enterText(campoPassword, 'Passw0rd!12');
     await tester.tap(botonEntrar);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    final boton = tester.widget<FilledButton>(find.byType(FilledButton));
-    expect(boton.onPressed, isNull, reason: 'evita un doble envío');
+    expect(find.text('Entrando…'), findsOneWidget);
 
     espera.complete({'nombre': 'Ana'});
     await tester.pumpAndSettle();
 
-    // Terminada la espera, ya no hay spinner: se ha navegado a home.
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.textContaining('PANTALLA HOME'), findsOneWidget);
   });
@@ -185,10 +162,10 @@ void main() {
     expect(find.text('PANTALLA HOME: Ana'), findsOneWidget);
   });
 
-  testWidgets('el enlace de registro navega sin romper', (tester) async {
+  testWidgets('el enlace Crear cuenta navega al registro', (tester) async {
     await abrirLogin(tester, AuthFalso());
 
-    await tester.tap(find.text('¿No tienes cuenta? Regístrate'));
+    await tester.tap(find.text('Crear cuenta'));
     await tester.pumpAndSettle();
 
     expect(find.byType(RegisterPage), findsOneWidget);

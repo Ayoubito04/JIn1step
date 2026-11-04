@@ -93,11 +93,11 @@ export async function listarCvsDeUsuario(usuarioId: string) {
     return prisma.cv.findMany({
         where: { usuarioId },
         orderBy: { createdAt: 'desc' },
-        //contenidoTexto puede ser enorme y no hace falta en un listado
         select: {
             id: true,
             titulo: true,
             urlArchivo: true,
+            contenidoTexto: true,
             atsScore: true,
             createdAt: true,
         },

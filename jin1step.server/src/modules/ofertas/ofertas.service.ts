@@ -70,6 +70,7 @@ export async function crearOferta(reclutadorId: string, datos: CrearOfertaInput)
                 reclutadorId,
                 titulo: datos.titulo,
                 descripcion: datos.descripcion,
+                salario: datos.salario ?? null,
                 modalidad: datos.modalidad,
             },
             select: { id: true },

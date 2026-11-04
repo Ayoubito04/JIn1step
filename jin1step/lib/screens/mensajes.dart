@@ -5,6 +5,7 @@ import '../services/candidato.service.dart';
 import '../services/chat.service.dart';
 import '../services/ofertas.services.dart';
 import '../widgets/design_system.dart';
+import 'perfil_candidato.dart';
 
 /// Bandeja de conversaciones (pestaña Chat).
 class MensajesPage extends StatefulWidget {
@@ -492,6 +493,10 @@ class _ChatThreadPageState extends State<ChatThreadPage> {
     final oferta = widget.conversacion['oferta'] as Map<String, dynamic>?;
     final nombre = _nombreCompleto(persona);
     final primerNombre = (persona['nombre'] as String?)?.trim() ?? '';
+    final soyReclutador = !_esCandidato(widget.conversacion, widget.usuarioId);
+    final candidato =
+        widget.conversacion['candidato'] as Map<String, dynamic>? ?? persona;
+    final candidatoId = (candidato['id'] as String?)?.trim() ?? '';
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -526,6 +531,24 @@ class _ChatThreadPageState extends State<ChatThreadPage> {
                       ],
                     ),
                   ),
+                  if (soyReclutador && candidatoId.isNotEmpty) ...[
+                    const SizedBox(width: AppSpacing.group),
+                    SecondaryButton(
+                      label: 'Ver perfil',
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PerfilCandidatoPage(
+                              candidatoId: candidatoId,
+                              candidatoInicial: candidato,
+                              oferta: oferta,
+                              reclutadorId: widget.usuarioId,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),
