@@ -102,11 +102,13 @@ mínima y el tope diario de envíos. Puede elegir entre:
 - **Revisar antes de enviar** (`revisarAntes`): el autopiloto previsualiza las ofertas recomendadas
   y su valoración IA para que el candidato marque cuáles desea enviar.
 
-### 5. Perfil profesional tipo LinkedIn y vista completa para reclutadores
+### 5. Red social entre candidatos y vista completa para reclutadores
 
 - **Candidato**: cuenta con foto de portada (`banner`) personalizable desde su dispositivo,
-  ubicación, disponibilidad, **expectativa salarial bruta anual** (`expectativaSalarial`) y
-  preferencias de modalidad.
+  ubicación, disponibilidad, **expectativa salarial bruta anual** (`expectativaSalarial`),
+  preferencias de modalidad y una **Red profesional estilo LinkedIn** desde la que buscar a otros
+  candidatos, consultar sus perfiles públicos y **seguirlos en 1 clic** (con contadores de
+  `Seguidores` y `Siguiendo`).
 - **Reclutador**: puede abrir el perfil completo de cualquier candidato desde sus ofertas o desde
   el chat para consultar su portada, compatibilidad con la vacante, expectativa salarial, resumen
   profesional IA, habilidades declaradas, lectura/descarga del CV en PDF, selección para entrevista
@@ -212,6 +214,7 @@ Un único motor **PostgreSQL 16** gestionado con Prisma en
 |---|---|
 | `usuarios` | Cuentas (`CANDIDATO`, `RECLUTADOR`, `ADMIN`), hash bcrypt y/o `google_id` |
 | `candidatos_perfil` | Perfil profesional 1:1: `ubicacion`, `disponibilidad`, `expectativa_salarial` (€/año) y `banner` (imagen de portada) |
+| `seguimientos_candidato` | Red social entre candidatos (`seguidor_id`, `seguido_id`) con contadores de seguidores y siguiendo |
 | `empresas` | Empresas creadas por los reclutadores |
 | `cvs` | Currículums en PDF, texto extraído, `ats_score` y `perfil_ia` (JSON) |
 | `habilidades` | Catálogo normalizado de habilidades técnicas, metodologías e idiomas |
@@ -237,7 +240,9 @@ Base: `http://localhost:3000/api` · Autenticación: `Authorization: Bearer <acc
 | `POST` | `/auth/register` · `/auth/login` · `/auth/login/google` | — | Registro e inicio de sesión |
 | `GET` · `PUT` | `/perfil-candidato/mio` | candidato | Consultar o actualizar ubicación, disponibilidad, expectativa salarial y banner |
 | `POST` · `DELETE` | `/perfil-candidato/mio/banner` | candidato | Subir o eliminar la foto de portada tipo LinkedIn |
-| `GET` | `/perfil-candidato/:candidatoId` | reclutador | Ver el perfil completo, resumen IA y CVs de un candidato |
+| `GET` | `/perfil-candidato/red` | candidato | Directorio de candidatos, seguidores, siguiendo y buscador |
+| `POST` · `DELETE` | `/perfil-candidato/:candidatoId/seguir` | candidato | Seguir o dejar de seguir a otro candidato en un clic |
+| `GET` | `/perfil-candidato/:candidatoId` | reclutador · candidato | Ver el perfil completo, resumen IA, habilidades y CVs de un candidato |
 | `POST` · `GET` · `DELETE` | `/cv` · `/cv/:id` | auth | Subir, listar, consultar o borrar CVs en PDF |
 | `GET` · `POST` · `PATCH` · `DELETE` | `/habilidades/cv/:cvId` | candidato | Gestionar habilidades y niveles de un CV |
 | `GET` · `POST` · `PATCH` | `/ofertas` · `/ofertas/mias` · `/ofertas/:id` | auth / reclutador | Buscar, publicar y editar ofertas con salario y requisitos |

@@ -9,6 +9,7 @@ import '../core/app_theme.dart';
 import '../services/auth.service.dart';
 import '../services/candidato.service.dart';
 import '../widgets/design_system.dart';
+import 'red_candidatos.dart';
 
 /// Perfil del usuario. Candidato: foto de portada (banner estilo LinkedIn),
 /// ubicación, disponibilidad y expectativa salarial (las ven las empresas al
@@ -40,10 +41,12 @@ class _PerfilPageState extends State<PerfilPage> {
   final Set<String> _modalidadesPreferidas = {'Remoto', 'Híbrido'};
   bool _avisosPushFcm = true;
   bool _subiendoBanner = false;
+  bool _subiendoFotoPerfil = false;
 
   Future<_DatosPerfil> _cargar() async {
     if (!_esCandidato) return const _DatosPerfil();
     final perfil = await _service.obtenerMiPerfil();
+    CandidatoService.fotoPerfilActual.value = perfil['fotoPerfil'] as String?;
     // El plan es informativo: si falla, el perfil sigue siendo usable.
     Map<String, dynamic>? suscripcion;
     try {
@@ -54,9 +57,22 @@ class _PerfilPageState extends State<PerfilPage> {
       disponibilidad: perfil['disponibilidad'] as String?,
       expectativaSalarial: (perfil['expectativaSalarial'] as num?)?.toInt(),
       banner: perfil['banner'] as String?,
+      fotoPerfil: perfil['fotoPerfil'] as String?,
+      seguidoresCount: (perfil['seguidoresCount'] as num?)?.toInt() ?? 0,
+      siguiendoCount: (perfil['siguiendoCount'] as num?)?.toInt() ?? 0,
       plan: suscripcion?['tipoPlan'] as String?,
       conSuscripcion: suscripcion != null,
     );
+  }
+
+  Future<void> _abrirRed(PestanaRed pestana) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            RedCandidatosPage(pestanaInicial: pestana, service: _service),
+      ),
+    );
+    if (mounted) _recargar();
   }
 
   void _recargar() {
@@ -128,6 +144,72 @@ class _PerfilPageState extends State<PerfilPage> {
     }
   }
 
+  Future<void> _subirFotoPerfil(_DatosPerfil actuales) async {
+    if (_subiendoFotoPerfil) return;
+    try {
+      final archivos = await FilePicker.pickFiles(type: FileType.image);
+      if (archivos.isEmpty || !mounted) return;
+      final archivo = archivos.first;
+      final bytes = await archivo.readAsBytes();
+      if (bytes.isEmpty) return;
+
+      setState(() => _subiendoFotoPerfil = true);
+      final actualizado = await _service.subirFotoPerfil(
+        nombreArchivo: archivo.name.isEmpty ? 'avatar.jpg' : archivo.name,
+        bytes: bytes,
+      );
+      CandidatoService.fotoPerfilActual.value =
+          actualizado['fotoPerfil'] as String?;
+      if (!mounted) return;
+      setState(() {
+        _datos = Future.value(
+          actuales.copyWith(fotoPerfil: actualizado['fotoPerfil'] as String?),
+        );
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto de perfil actualizada.')),
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.mensaje)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo subir la foto de perfil.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _subiendoFotoPerfil = false);
+    }
+  }
+
+  Future<void> _quitarFotoPerfil(_DatosPerfil actuales) async {
+    if (_subiendoFotoPerfil) return;
+    setState(() => _subiendoFotoPerfil = true);
+    try {
+      await _service.borrarFotoPerfil();
+      CandidatoService.fotoPerfilActual.value = null;
+      if (!mounted) return;
+      setState(() {
+        _datos = Future.value(actuales.copyWith(limpiarFotoPerfil: true));
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto de perfil eliminada.')),
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.mensaje)));
+      }
+    } finally {
+      if (mounted) setState(() => _subiendoFotoPerfil = false);
+    }
+  }
+
   Future<void> _editar(_DatosPerfil actuales) async {
     final guardado = await showModalBottomSheet<_DatosPerfil>(
       context: context,
@@ -145,6 +227,7 @@ class _PerfilPageState extends State<PerfilPage> {
   }
 
   Future<void> _cerrarSesion() async {
+    CandidatoService.fotoPerfilActual.value = null;
     await AuthService().logout();
     if (!mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
@@ -270,10 +353,18 @@ class _PerfilPageState extends State<PerfilPage> {
                         correo: correo,
                         inicial: inicial,
                         banner: datos.banner,
+                        fotoPerfil: datos.fotoPerfil,
                         subiendo: _subiendoBanner,
+                        subiendoFotoPerfil: _subiendoFotoPerfil,
+                        seguidoresCount: datos.seguidoresCount,
+                        siguiendoCount: datos.siguiendoCount,
                         onSubirFoto: () => _subirFotoBanner(datos),
                         onQuitarFoto: datos.tieneFotoBanner
                             ? () => _quitarFotoBanner(datos)
+                            : null,
+                        onSubirFotoPerfil: () => _subirFotoPerfil(datos),
+                        onQuitarFotoPerfil: datos.tieneFotoPerfil
+                            ? () => _quitarFotoPerfil(datos)
                             : null,
                       ),
                       const SizedBox(height: AppSpacing.gap),
@@ -359,6 +450,21 @@ class _PerfilPageState extends State<PerfilPage> {
               onTap: () => _editar(datos),
             ),
             ListRow(
+              title: 'Foto de perfil',
+              lines: [
+                datos.tieneFotoPerfil
+                    ? 'Foto de perfil activa · Toca para cambiarla'
+                    : 'Sube una foto circular estilo LinkedIn para tu avatar',
+              ],
+              trailing: StatusTag(
+                label: datos.tieneFotoPerfil ? 'Personalizada' : 'Por defecto',
+                variant: datos.tieneFotoPerfil
+                    ? StatusVariant.success
+                    : StatusVariant.neutral,
+              ),
+              onTap: () => _subirFotoPerfil(datos),
+            ),
+            ListRow(
               title: 'Foto de portada (banner)',
               lines: [
                 datos.tieneFotoBanner
@@ -372,6 +478,38 @@ class _PerfilPageState extends State<PerfilPage> {
                     : StatusVariant.neutral,
               ),
               onTap: () => _subirFotoBanner(datos),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.gap),
+        const SectionTitle('Red profesional'),
+        const SizedBox(height: AppSpacing.group),
+        PanelList(
+          children: [
+            ListRow(
+              title: 'Seguidores',
+              lines: const ['Candidatos que siguen tu perfil'],
+              trailing: Text(
+                '${datos.seguidoresCount}',
+                style: AppText.numInline,
+              ),
+              onTap: () => _abrirRed(PestanaRed.seguidores),
+            ),
+            ListRow(
+              title: 'Siguiendo',
+              lines: const ['Perfiles que sigues actualmente'],
+              trailing: Text(
+                '${datos.siguiendoCount}',
+                style: AppText.numInline,
+              ),
+              onTap: () => _abrirRed(PestanaRed.siguiendo),
+            ),
+            ListRow(
+              title: 'Explorar candidatos',
+              lines: const [
+                'Busca profesionales afines, consulta su perfil y síguelos en un clic',
+              ],
+              onTap: () => _abrirRed(PestanaRed.explorar),
             ),
           ],
         ),
@@ -487,15 +625,27 @@ class _CabeceraPerfilConBanner extends StatelessWidget {
     required this.subiendo,
     required this.onSubirFoto,
     required this.onQuitarFoto,
+    this.fotoPerfil,
+    this.subiendoFotoPerfil = false,
+    this.onSubirFotoPerfil,
+    this.onQuitarFotoPerfil,
+    this.seguidoresCount = 0,
+    this.siguiendoCount = 0,
   });
 
   final String nombreCompleto;
   final String correo;
   final String inicial;
   final String? banner;
+  final String? fotoPerfil;
   final bool subiendo;
+  final bool subiendoFotoPerfil;
   final VoidCallback? onSubirFoto;
   final VoidCallback? onQuitarFoto;
+  final VoidCallback? onSubirFotoPerfil;
+  final VoidCallback? onQuitarFotoPerfil;
+  final int seguidoresCount;
+  final int siguiendoCount;
 
   @override
   Widget build(BuildContext context) {
@@ -627,13 +777,101 @@ class _CabeceraPerfilConBanner extends StatelessWidget {
               Positioned(
                 left: AppSpacing.gap,
                 bottom: -24,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: const BoxDecoration(
-                    color: AppColors.surface,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Avatar(initial: inicial, seed: correo, size: 56),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    GestureDetector(
+                      onTap: subiendoFotoPerfil ? null : onSubirFotoPerfil,
+                      child: Material(
+                        color: AppColors.surface,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          onTap: subiendoFotoPerfil ? null : onSubirFotoPerfil,
+                          customBorder: const CircleBorder(),
+                          child: Padding(
+                            padding: const EdgeInsets.all(3),
+                            child: Avatar(
+                              initial: inicial,
+                              seed: correo,
+                              size: 56,
+                              imageUrl: fotoPerfil,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (onSubirFotoPerfil != null)
+                      Positioned(
+                        right: -2,
+                        bottom: -2,
+                        child: Tooltip(
+                          message: 'Cambiar foto de perfil',
+                          child: Material(
+                            color: AppColors.ink,
+                            shape: const CircleBorder(
+                              side: BorderSide(
+                                color: AppColors.surface,
+                                width: 2,
+                              ),
+                            ),
+                            child: InkWell(
+                              onTap: subiendoFotoPerfil
+                                  ? null
+                                  : onSubirFotoPerfil,
+                              customBorder: const CircleBorder(),
+                              child: Padding(
+                                padding: const EdgeInsets.all(5),
+                                child: subiendoFotoPerfil
+                                    ? const SizedBox.square(
+                                        dimension: 12,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.photo_camera_outlined,
+                                        size: 13,
+                                        color: Colors.white,
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (onQuitarFotoPerfil != null && !subiendoFotoPerfil)
+                      Positioned(
+                        left: -4,
+                        bottom: -2,
+                        child: Tooltip(
+                          message: 'Quitar foto de perfil',
+                          child: Material(
+                            color: Colors.black.withValues(alpha: 0.65),
+                            shape: const CircleBorder(
+                              side: BorderSide(
+                                color: AppColors.surface,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: InkWell(
+                              onTap: onQuitarFotoPerfil,
+                              customBorder: const CircleBorder(),
+                              child: const Padding(
+                                padding: EdgeInsets.all(4),
+                                child: Icon(
+                                  Icons.close,
+                                  size: 11,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -651,7 +889,18 @@ class _CabeceraPerfilConBanner extends StatelessWidget {
               children: [
                 ScreenHeader(title: nombreCompleto, subtitle: correo),
                 const SizedBox(height: AppSpacing.group),
-                const StatusTag(label: 'Candidato/a'),
+                Wrap(
+                  spacing: AppSpacing.group,
+                  runSpacing: AppSpacing.group,
+                  children: [
+                    const StatusTag(label: 'Candidato/a'),
+                    StatusTag(
+                      label:
+                          '$seguidoresCount ${seguidoresCount == 1 ? 'seguidor' : 'seguidores'}',
+                    ),
+                    StatusTag(label: '$siguiendoCount siguiendo'),
+                  ],
+                ),
               ],
             ),
           ),
@@ -685,6 +934,9 @@ class _DatosPerfil {
     this.disponibilidad,
     this.expectativaSalarial,
     this.banner,
+    this.fotoPerfil,
+    this.seguidoresCount = 0,
+    this.siguiendoCount = 0,
     this.plan,
     this.conSuscripcion = false,
   });
@@ -693,6 +945,9 @@ class _DatosPerfil {
   final String? disponibilidad;
   final int? expectativaSalarial;
   final String? banner;
+  final String? fotoPerfil;
+  final int seguidoresCount;
+  final int siguiendoCount;
   final String? plan;
   final bool conSuscripcion;
 
@@ -701,17 +956,30 @@ class _DatosPerfil {
       (banner != null &&
           (banner!.startsWith('http://') || banner!.startsWith('https://')));
 
+  bool get tieneFotoPerfil =>
+      decodificarImagenBanner(fotoPerfil) != null ||
+      (fotoPerfil != null &&
+          (fotoPerfil!.startsWith('http://') ||
+              fotoPerfil!.startsWith('https://')));
+
   _DatosPerfil copyWith({
     String? ubicacion,
     String? disponibilidad,
     int? expectativaSalarial,
     String? banner,
+    String? fotoPerfil,
+    int? seguidoresCount,
+    int? siguiendoCount,
     bool limpiarBanner = false,
+    bool limpiarFotoPerfil = false,
   }) => _DatosPerfil(
     ubicacion: ubicacion ?? this.ubicacion,
     disponibilidad: disponibilidad ?? this.disponibilidad,
     expectativaSalarial: expectativaSalarial ?? this.expectativaSalarial,
     banner: limpiarBanner ? null : (banner ?? this.banner),
+    fotoPerfil: limpiarFotoPerfil ? null : (fotoPerfil ?? this.fotoPerfil),
+    seguidoresCount: seguidoresCount ?? this.seguidoresCount,
+    siguiendoCount: siguiendoCount ?? this.siguiendoCount,
     plan: plan,
     conSuscripcion: conSuscripcion,
   );
@@ -812,6 +1080,9 @@ class _EditarPerfilState extends State<_EditarPerfil> {
           disponibilidad: disponibilidad.isEmpty ? null : disponibilidad,
           expectativaSalarial: salario,
           banner: widget.actuales.banner,
+          fotoPerfil: widget.actuales.fotoPerfil,
+          seguidoresCount: widget.actuales.seguidoresCount,
+          siguiendoCount: widget.actuales.siguiendoCount,
           plan: widget.actuales.plan,
           conSuscripcion: widget.actuales.conSuscripcion,
         ),

@@ -12,8 +12,54 @@ import type {
 
 const CARPETA_SUBIDAS = path.join(__dirname, '../../../uploads')
 
-//Lo que se enseña de cada postulación. Como en ofertas, es un select explícito
-//para no devolver la fila entera de Usuario (passwordHash incluido).
+const OFERTA_EN_POSTULACION = {
+    select: {
+        id: true,
+        titulo: true,
+        salario: true,
+        modalidad: true,
+        estado: true,
+        reclutadorId: true,
+        empresa: {
+            select: { id: true, nombre: true, sitioWeb: true },
+        },
+        requisitos: {
+            select: {
+                obligatorio: true,
+                habilidad: { select: { id: true, nombre: true } },
+            },
+        },
+    },
+} as const
+
+//Para el propio candidato (GET /postulaciones/mias): no repite ni banner ni
+//fotoPerfil (en base64) en cada una de sus N postulaciones.
+const CON_CV_Y_OFERTA_PROPIA = {
+    cv: {
+        select: {
+            id: true,
+            titulo: true,
+            usuario: {
+                select: {
+                    id: true,
+                    nombre: true,
+                    apellidos: true,
+                    candidatoPerfil: {
+                        select: {
+                            ubicacion: true,
+                            disponibilidad: true,
+                            expectativaSalarial: true,
+                        },
+                    },
+                },
+            },
+        },
+    },
+    oferta: OFERTA_EN_POSTULACION,
+} as const
+
+//Lo que se enseña al reclutador de cada postulación (incluye fotoPerfil para el
+//avatar del listado; el banner completo se pide al abrir PerfilCandidatoPage).
 const CON_CV_Y_OFERTA = {
     cv: {
         select: {
@@ -29,32 +75,14 @@ const CON_CV_Y_OFERTA = {
                             ubicacion: true,
                             disponibilidad: true,
                             expectativaSalarial: true,
-                            banner: true,
+                            fotoPerfil: true,
                         },
                     },
                 },
             },
         },
     },
-    oferta: {
-        select: {
-            id: true,
-            titulo: true,
-            salario: true,
-            modalidad: true,
-            estado: true,
-            reclutadorId: true,
-            empresa: {
-                select: { id: true, nombre: true, sitioWeb: true },
-            },
-            requisitos: {
-                select: {
-                    obligatorio: true,
-                    habilidad: { select: { id: true, nombre: true } },
-                },
-            },
-        },
-    },
+    oferta: OFERTA_EN_POSTULACION,
 } as const
 
 //Estados que el reclutador NO ve: la candidatura aún no se ha enviado
@@ -143,7 +171,7 @@ export async function crearPostulacion(
                 matchScore: match.puntuacion,
                 postuladoPorIa,
             },
-            include: CON_CV_Y_OFERTA,
+            include: CON_CV_Y_OFERTA_PROPIA,
         })
 
         return { ...postulacion, detalleMatch: match }
@@ -167,7 +195,7 @@ export async function listarPostulacionesDeCandidato(candidatoId: string) {
     return prisma.postulacion.findMany({
         where: { cv: { usuarioId: candidatoId } },
         orderBy: { fechaPostulacion: 'desc' },
-        include: CON_CV_Y_OFERTA,
+        include: CON_CV_Y_OFERTA_PROPIA,
     })
 }
 
@@ -330,7 +358,7 @@ export async function aprobarPostulacion(candidatoId: string, postulacionId: str
 
     return prisma.postulacion.findUniqueOrThrow({
         where: { id: postulacion.id },
-        include: CON_CV_Y_OFERTA,
+        include: CON_CV_Y_OFERTA_PROPIA,
     })
 }
 
@@ -344,7 +372,7 @@ export async function descartarPostulacion(candidatoId: string, postulacionId: s
 
     return prisma.postulacion.findUniqueOrThrow({
         where: { id: postulacion.id },
-        include: CON_CV_Y_OFERTA,
+        include: CON_CV_Y_OFERTA_PROPIA,
     })
 }
 
@@ -369,7 +397,7 @@ export async function retirarPostulacion(
     if (postulacion.estado === 'RETIRADA') {
         return prisma.postulacion.findUniqueOrThrow({
             where: { id: postulacion.id },
-            include: CON_CV_Y_OFERTA,
+            include: CON_CV_Y_OFERTA_PROPIA,
         })
     }
 
@@ -399,7 +427,7 @@ export async function retirarPostulacion(
 
     return prisma.postulacion.findUniqueOrThrow({
         where: { id: postulacion.id },
-        include: CON_CV_Y_OFERTA,
+        include: CON_CV_Y_OFERTA_PROPIA,
     })
 }
 

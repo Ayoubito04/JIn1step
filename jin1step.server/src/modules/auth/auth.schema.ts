@@ -38,6 +38,25 @@ export const googleAuthSchema = z.object({
     rol: z.enum(['CANDIDATO', 'RECLUTADOR']).optional(),
 }).strict()
 
+//Autenticación con LinkedIn (OAuth 2.0 OpenID Connect con `code` o `accessToken`,
+//más modo local/demo asistido que permite importar foto de perfil y CV de LinkedIn).
+export const linkedinAuthSchema = z.object({
+    code: z.string().trim().min(1).optional(),
+    accessToken: z.string().trim().min(1).optional(),
+    redirectUri: z.string().trim().optional(),
+    email: emailSchema.optional(),
+    nombre: z.string().trim().min(1).max(100).optional(),
+    apellidos: z.string().trim().max(150).optional(),
+    titular: z.string().trim().max(200).optional(),
+    ubicacion: z.string().trim().max(120).optional(),
+    fotoPerfil: z.string().trim().optional(),
+    resumenCv: z.string().trim().max(8000).optional(),
+    importarFoto: z.boolean().optional(),
+    importarCv: z.boolean().optional(),
+    rol: z.enum(['CANDIDATO', 'RECLUTADOR']).optional(),
+}).strict()
+
 export type RegisterInput = z.infer<typeof registerSchema>
 export type LoginInput = z.infer<typeof loginSchema>
 export type GoogleAuthInput = z.infer<typeof googleAuthSchema>
+export type LinkedinAuthInput = z.infer<typeof linkedinAuthSchema>

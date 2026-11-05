@@ -239,6 +239,7 @@ class _CandidatosOfertaPageState extends State<CandidatosOfertaPage> {
     final candidato = cv['usuario'] as Map<String, dynamic>? ?? {};
     final perfil = candidato['candidatoPerfil'] as Map<String, dynamic>? ?? {};
     final banner = (perfil['banner'] as String?)?.trim() ?? '';
+    final fotoPerfil = (perfil['fotoPerfil'] as String?)?.trim();
     final bannerBytes = decodificarImagenBanner(banner);
     final ubicacion = (perfil['ubicacion'] as String?)?.trim() ?? '';
     final disponibilidad = (perfil['disponibilidad'] as String?)?.trim() ?? '';
@@ -272,7 +273,14 @@ class _CandidatosOfertaPageState extends State<CandidatosOfertaPage> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(children: [
-                  CircleAvatar(child: Text(nombre.isEmpty ? '?' : nombre.substring(0, 1).toUpperCase())),
+                  Avatar(
+                    initial: nombre.isEmpty
+                        ? '?'
+                        : nombre.substring(0, 1).toUpperCase(),
+                    seed: id,
+                    size: 40,
+                    imageUrl: fotoPerfil,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(nombre.isEmpty ? 'Candidato' : nombre, style: const TextStyle(fontWeight: FontWeight.w800)),

@@ -1,10 +1,13 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../core/api_client.dart';
 import '../core/app_theme.dart';
+import '../services/auth.service.dart';
 import '../services/candidato.service.dart';
 import '../services/habilidades.service.dart';
 import '../widgets/design_system.dart';
+import '../widgets/linkedin_auth_sheet.dart';
 import 'cv_preview.dart';
 
 const _maxBytesPdf = 5 * 1024 * 1024;
@@ -40,6 +43,8 @@ class _MisCvsPageState extends State<MisCvsPage> {
   late Future<_DatosCv> _datos = _cargar();
   bool _subiendo = false;
   bool _verTodas = false;
+  bool _importandoLinkedin = false;
+  String? _avisoLinkedin;
   String? _error;
 
   Future<_DatosCv> _cargar() async {
@@ -104,6 +109,43 @@ class _MisCvsPageState extends State<MisCvsPage> {
       if (mounted) setState(() => _error = error.toString());
     } finally {
       if (mounted) setState(() => _subiendo = false);
+    }
+  }
+
+  /// Trae la foto y el CV de LinkedIn a la cuenta actual. Si ya había un
+  /// «CV LinkedIn», el backend lo actualiza en vez de duplicarlo.
+  Future<void> _importarLinkedin() async {
+    final datos = await mostrarHojaLinkedin(
+      context,
+      titulo: 'Importar de LinkedIn',
+      textoBoton: 'Importar ahora',
+      pedirEmail: false,
+    );
+    if (datos == null || !mounted) return;
+    setState(() {
+      _importandoLinkedin = true;
+      _error = null;
+      _avisoLinkedin = null;
+    });
+    try {
+      final r = await AuthService().sincronizarConLinkedin(datos.aMapa());
+      final cv = r['cvImportado'] as Map<String, dynamic>?;
+      final n = (cv?['habilidadesDetectadas'] as List?)?.length ?? 0;
+      final partes = [
+        if (datos.importarFoto && r['fotoPerfil'] != null) 'foto de perfil',
+        if (cv != null) 'CV con $n ${n == 1 ? 'habilidad' : 'habilidades'}',
+      ];
+      if (!mounted) return;
+      setState(() {
+        _avisoLinkedin = partes.isEmpty
+            ? 'LinkedIn conectado. No se importó nada nuevo.'
+            : 'Importado de LinkedIn: ${partes.join(' y ')}.';
+      });
+      _recargar();
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.mensaje);
+    } finally {
+      if (mounted) setState(() => _importandoLinkedin = false);
     }
   }
 
@@ -249,6 +291,18 @@ class _MisCvsPageState extends State<MisCvsPage> {
               : '${cvs.isEmpty ? 'Subir PDF' : 'Subir otro PDF'} (máx. 5 MB)',
           onPressed: _subiendo ? null : _subirCv,
         ),
+        const SizedBox(height: AppSpacing.group),
+        SecondaryButton(
+          label: _importandoLinkedin
+              ? 'Importando de LinkedIn…'
+              : 'Importar CV y foto de LinkedIn',
+          leading: const LinkedinLogoMark(),
+          onPressed: _subiendo || _importandoLinkedin ? null : _importarLinkedin,
+        ),
+        if (_avisoLinkedin != null) ...[
+          const SizedBox(height: AppSpacing.gap),
+          Notice(message: _avisoLinkedin!, variant: StatusVariant.success),
+        ],
         if (_error != null) ...[
           const SizedBox(height: AppSpacing.gap),
           Notice(message: _error!, variant: StatusVariant.error),

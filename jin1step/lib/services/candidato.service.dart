@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../core/api_client.dart';
 
@@ -13,6 +13,18 @@ bool esCandidaturaEnviada(Map<String, dynamic> postulacion) =>
 
 class CandidatoService {
   static const _esperaAutopilot = Duration(minutes: 4);
+
+  /// Foto de perfil circular del candidato autenticado, reactiva para que la
+  /// cabecera de Inicio y cualquier avatar propio se actualicen al instante.
+  static final ValueNotifier<String?> fotoPerfilActual =
+      ValueNotifier<String?>(null);
+
+  static Map<String, dynamic> _sincronizarFoto(Map<String, dynamic> datos) {
+    if (datos.containsKey('fotoPerfil')) {
+      fotoPerfilActual.value = datos['fotoPerfil'] as String?;
+    }
+    return datos;
+  }
 
   /// Aprueba una propuesta del autopiloto: pasa a enviada.
   Future<Map<String, dynamic>> aprobarPostulacion(String id) async {
@@ -79,7 +91,7 @@ class CandidatoService {
   Future<Map<String, dynamic>> obtenerMiPerfil() async {
     try {
       final respuesta = await ApiClient.dio.get('/perfil-candidato/mio');
-      return respuesta.data as Map<String, dynamic>;
+      return _sincronizarFoto(respuesta.data as Map<String, dynamic>);
     } catch (error) {
       throw ApiClient.traducirError(error);
     }
@@ -102,7 +114,7 @@ class CandidatoService {
           'banner': ?banner,
         },
       );
-      return respuesta.data as Map<String, dynamic>;
+      return _sincronizarFoto(respuesta.data as Map<String, dynamic>);
     } catch (error) {
       throw ApiClient.traducirError(error);
     }
@@ -133,7 +145,7 @@ class CandidatoService {
         '/perfil-candidato/mio/banner',
         data: datos,
       );
-      return respuesta.data as Map<String, dynamic>;
+      return _sincronizarFoto(respuesta.data as Map<String, dynamic>);
     } catch (error) {
       throw ApiClient.traducirError(error);
     }
@@ -144,6 +156,89 @@ class CandidatoService {
     try {
       final respuesta = await ApiClient.dio.delete(
         '/perfil-candidato/mio/banner',
+      );
+      return _sincronizarFoto(respuesta.data as Map<String, dynamic>);
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  /// Sube una imagen (JPG, PNG, WEBP o GIF) como foto de perfil circular del candidato.
+  Future<Map<String, dynamic>> subirFotoPerfil({
+    required String nombreArchivo,
+    required List<int> bytes,
+  }) async {
+    try {
+      final ext = nombreArchivo.toLowerCase();
+      final mime = ext.endsWith('.png')
+          ? 'image/png'
+          : ext.endsWith('.webp')
+          ? 'image/webp'
+          : ext.endsWith('.gif')
+          ? 'image/gif'
+          : 'image/jpeg';
+      final datos = FormData.fromMap({
+        'archivo': MultipartFile.fromBytes(
+          bytes,
+          filename: nombreArchivo,
+          contentType: DioMediaType.parse(mime),
+        ),
+      });
+      final respuesta = await ApiClient.dio.post(
+        '/perfil-candidato/mio/foto',
+        data: datos,
+      );
+      return _sincronizarFoto(respuesta.data as Map<String, dynamic>);
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  /// Elimina la foto de perfil circular del candidato.
+  Future<Map<String, dynamic>> borrarFotoPerfil() async {
+    try {
+      final respuesta = await ApiClient.dio.delete(
+        '/perfil-candidato/mio/foto',
+      );
+      return _sincronizarFoto(respuesta.data as Map<String, dynamic>);
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  /// Obtiene la red profesional del candidato (seguidores, siguiendo y directorio).
+  Future<Map<String, dynamic>> obtenerRedCandidatos({String? busqueda}) async {
+    try {
+      final q = busqueda?.trim() ?? '';
+      final respuesta = await ApiClient.dio.get(
+        '/perfil-candidato/red',
+        queryParameters: q.isEmpty ? null : {'q': q},
+      );
+      return respuesta.data as Map<String, dynamic>;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  /// Sigue a otro candidato en un clic.
+  Future<Map<String, dynamic>> seguirCandidato(String candidatoId) async {
+    try {
+      final respuesta = await ApiClient.dio.post(
+        '/perfil-candidato/$candidatoId/seguir',
+      );
+      return respuesta.data as Map<String, dynamic>;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  /// Deja de seguir a un candidato.
+  Future<Map<String, dynamic>> dejarDeSeguirCandidato(
+    String candidatoId,
+  ) async {
+    try {
+      final respuesta = await ApiClient.dio.delete(
+        '/perfil-candidato/$candidatoId/seguir',
       );
       return respuesta.data as Map<String, dynamic>;
     } catch (error) {
@@ -290,11 +385,16 @@ class CandidatoService {
     try {
       final respuesta = await ApiClient.dio.post(
         '/postulaciones-autopilot/ejecutar',
-        options: Options(receiveTimeout: _esperaAutopilot),
+        options: Options(
+          connectTimeout: _esperaAutopilot,
+          sendTimeout: _esperaAutopilot,
+          receiveTimeout: _esperaAutopilot,
+        ),
       );
       return respuesta.data as Map<String, dynamic>;
     } on DioException catch (error) {
-      if (error.type == DioExceptionType.receiveTimeout) {
+      if (error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.connectionTimeout) {
         throw const ApiException(
           'El autopiloto está tardando demasiado. Puede seguir procesando: '
           'revisa tus propuestas y candidaturas antes de volver a intentarlo.',
@@ -310,7 +410,11 @@ class CandidatoService {
     try {
       final respuesta = await ApiClient.dio.post(
         '/postulaciones-autopilot/previsualizar',
-        options: Options(receiveTimeout: _esperaAutopilot),
+        options: Options(
+          connectTimeout: _esperaAutopilot,
+          sendTimeout: _esperaAutopilot,
+          receiveTimeout: _esperaAutopilot,
+        ),
       );
       return respuesta.data as Map<String, dynamic>;
     } catch (error) {

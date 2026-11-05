@@ -87,8 +87,9 @@ model Usuario {
   nombre       String
   apellidos    String
   email        String   @unique
-  passwordHash String?  @map("password_hash") // null si el usuario entra solo con Google
+  passwordHash String?  @map("password_hash") // null si el usuario entra solo con Google o LinkedIn
   googleId     String?  @unique @map("google_id")
+  linkedinId   String?  @unique @map("linkedin_id")
   rol          Rol
   createdAt    DateTime @default(now()) @map("created_at")
 
@@ -102,8 +103,23 @@ model Usuario {
   suscripciones                Suscripcion[]
   preferenciasAutopilot        PreferenciasAutopilot?
   ejecucionesAutopilot         EjecucionAutopilot[]
+  siguiendo                    SeguimientoCandidato[] @relation("CandidatoSiguiendo")
+  seguidores                   SeguimientoCandidato[] @relation("CandidatoSeguidores")
 
   @@map("usuarios")
+}
+
+model SeguimientoCandidato {
+  seguidorId String   @map("seguidor_id")
+  seguidoId  String   @map("seguido_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  seguidor Usuario @relation("CandidatoSiguiendo", fields: [seguidorId], references: [id], onDelete: Cascade)
+  seguido  Usuario @relation("CandidatoSeguidores", fields: [seguidoId], references: [id], onDelete: Cascade)
+
+  @@id([seguidorId, seguidoId])
+  @@index([seguidoId])
+  @@map("seguimientos_candidato")
 }
 
 model CandidatoPerfil {
@@ -112,6 +128,7 @@ model CandidatoPerfil {
   disponibilidad      String?
   expectativaSalarial Int?    @map("expectativa_salarial")
   banner              String?
+  fotoPerfil          String? @map("foto_perfil")
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 

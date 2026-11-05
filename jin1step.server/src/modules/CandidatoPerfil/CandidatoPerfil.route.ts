@@ -1,4 +1,4 @@
-//Rutas del perfil de candidato, montadas bajo /api/perfil-candidato.
+//Rutas del perfil de candidato y su red profesional, montadas bajo /api/perfil-candidato.
 import { Router } from 'express'
 import multer from 'multer'
 import * as perfilController from './CandidatoPerfil.controller'
@@ -37,10 +37,8 @@ export const candidatoPerfilRouter = Router()
 
 candidatoPerfilRouter.use(requireAuth)
 
-//Las rutas de "mi perfil" van ANTES de /:candidatoId. Si no, Express
-//interpretaría "mio" como un id y buscaría un candidato llamado así.
-//
-//Solo CANDIDATO: un reclutador no tiene perfil de candidato que editar.
+//Las rutas fijas ("/mio", "/red") van ANTES de /:candidatoId. Si no, Express
+//las interpretaría como un id de candidato.
 candidatoPerfilRouter.get(
     '/mio',
     requireRol('CANDIDATO'),
@@ -63,17 +61,44 @@ candidatoPerfilRouter.delete(
     requireRol('CANDIDATO'),
     perfilController.borrarBanner,
 )
-//204 y sin body: borra ubicación y disponibilidad, NO la cuenta.
+candidatoPerfilRouter.post(
+    '/mio/foto',
+    requireRol('CANDIDATO'),
+    uploadBanner.single('archivo'),
+    perfilController.subirFotoPerfil,
+)
+candidatoPerfilRouter.delete(
+    '/mio/foto',
+    requireRol('CANDIDATO'),
+    perfilController.borrarFotoPerfil,
+)
 candidatoPerfilRouter.delete(
     '/mio',
     requireRol('CANDIDATO'),
     perfilController.borrarMiPerfil,
 )
 
-//Solo RECLUTADOR: lo consulta al revisar una candidatura. Un candidato no
-//tiene por qué poder mirar el perfil de otros candidatos.
+// Red profesional entre candidatos (seguidores, siguiendo y directorio)
+candidatoPerfilRouter.get(
+    '/red',
+    requireRol('CANDIDATO'),
+    perfilController.redCandidatos,
+)
+candidatoPerfilRouter.post(
+    '/:candidatoId/seguir',
+    requireRol('CANDIDATO'),
+    perfilController.seguirCandidato,
+)
+candidatoPerfilRouter.delete(
+    '/:candidatoId/seguir',
+    requireRol('CANDIDATO'),
+    perfilController.dejarDeSeguirCandidato,
+)
+
+//Tanto RECLUTADOR (al revisar una candidatura) como CANDIDATO (en la red social)
+//pueden ver el perfil completo de un candidato.
 candidatoPerfilRouter.get(
     '/:candidatoId',
-    requireRol('RECLUTADOR'),
+    requireRol('RECLUTADOR', 'CANDIDATO'),
     perfilController.perfilDeCandidato,
 )

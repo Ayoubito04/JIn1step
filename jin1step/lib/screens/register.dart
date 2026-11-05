@@ -10,6 +10,7 @@ import '../core/google_auth_config.dart';
 import '../services/auth.service.dart';
 import '../widgets/brand_logo.dart';
 import '../widgets/design_system.dart';
+import '../widgets/linkedin_auth_sheet.dart';
 import '../widgets/google_sign_in_web_button_stub.dart'
     if (dart.library.html) '../widgets/google_sign_in_web_button.dart'
     as google_web;
@@ -249,6 +250,33 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
+  /// Crea la cuenta con LinkedIn usando el rol elegido; si ya se escribió el
+  /// nombre o el correo, la hoja aparece rellena.
+  Future<void> _registrarseConLinkedin() async {
+    if (_cargando) return;
+    final nombreEscrito = _nombreCtrl.text.trim();
+    final datos = await mostrarHojaLinkedin(
+      context,
+      titulo: 'Registrarme con LinkedIn',
+      textoBoton: 'Crear cuenta con LinkedIn',
+      nombreInicial: nombreEscrito.isEmpty ? null : nombreEscrito,
+    );
+    if (datos == null || !mounted) return;
+
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+    try {
+      final respuesta = await _auth.loginConLinkedin(datos.aMapa(), rol: _rol);
+      if (mounted) _entrarHome(respuesta['usuario'] as Map<String, dynamic>);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.mensaje);
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
   /// Lleva al home pasándole los datos del usuario recién creado. Mismo
   /// patrón que en login.dart: pushNamedAndRemoveUntil borra el registro del
   /// historial para que "atrás" no vuelva a un formulario ya enviado.
@@ -350,6 +378,12 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               const SizedBox(height: AppSpacing.group),
               _botonGoogle(),
+              const SizedBox(height: AppSpacing.group),
+              SecondaryButton(
+                label: 'Registrarme con LinkedIn',
+                leading: const LinkedinLogoMark(),
+                onPressed: _cargando ? null : _registrarseConLinkedin,
+              ),
             ],
           ),
         ),

@@ -539,28 +539,61 @@ class _AutopilotPageState extends State<AutopilotPage> {
                     Notice(message: _error!, variant: StatusVariant.error),
                   ],
                   const SizedBox(height: AppSpacing.gap),
-                  PrimaryButton(
-                    label: 'Ejecutar autopiloto',
-                    loading: _ejecutando,
-                    loadingLabel: 'Buscando ofertas…',
-                    onPressed: _ejecutarAhora,
-                  ),
+                  _botonEjecutar(),
                 ],
               ),
       ),
     );
   }
 
+  Widget _botonEjecutar() {
+    final usadas = _cupoHoyMostrado;
+    final restantes = (_maxPorDia - _cupoHoy).clamp(0, _maxPorDia);
+    final sinCupo = restantes == 0;
+
+    final etiqueta = sinCupo
+        ? (_maxPorDia >= 20
+              ? 'Límite máximo de 20 ofertas/día alcanzado'
+              : 'Cupo diario completado ($usadas/$_maxPorDia)')
+        : usadas == 0
+        ? 'Ejecutar autopiloto (hasta $_maxPorDia hoy)'
+        : 'Buscar hasta $restantes ${restantes == 1 ? 'oferta más' : 'ofertas más'} hoy ($usadas/$_maxPorDia usadas)';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PrimaryButton(
+          label: etiqueta,
+          loading: _ejecutando,
+          loadingLabel: 'Buscando ofertas…',
+          onPressed: sinCupo ? null : _ejecutarAhora,
+        ),
+        const SizedBox(height: AppSpacing.micro),
+        Text(
+          sinCupo
+              ? (_maxPorDia >= 20
+                    ? 'Ya has utilizado las 20 candidaturas máximas permitidas hoy. Mañana se renovará tu cupo.'
+                    : 'Ya has alcanzado tu tope de $_maxPorDia hoy (el límite máximo del sistema es de 20 ofertas en total por día).')
+              : 'Recuerda: el tope total es de $_maxPorDia ${ _maxPorDia == 1 ? 'oferta' : 'ofertas'} al día (máx. 20/día en el sistema). Hoy te ${restantes == 1 ? 'queda 1 candidatura disponible' : 'quedan $restantes candidaturas disponibles'}.',
+          textAlign: TextAlign.center,
+          style: AppText.meta,
+        ),
+      ],
+    );
+  }
+
   Widget _cabecera() {
     final pendientes = _propuestas.length;
     final hoy = _enviadasHoy;
-    final frase = pendientes > 0
-        ? (pendientes == 1
-              ? 'Tienes una propuesta por revisar.'
-              : 'Tienes $pendientes propuestas por revisar.')
+    final usadas = _cupoHoyMostrado;
+    final restantes = (_maxPorDia - _cupoHoy).clamp(0, _maxPorDia);
+    final frase = restantes == 0
+        ? 'Has completado tu cupo de hoy ($usadas/$_maxPorDia · máx. 20 ofertas/día).'
+        : pendientes > 0
+        ? 'Llevas $usadas de $_maxPorDia hoy ($pendientes por revisar · te ${restantes == 1 ? 'queda 1 disponible' : 'quedan $restantes disponibles'}).'
         : hoy == 0
-        ? 'Hoy todavía no ha enviado ninguna candidatura.'
-        : 'Hoy ha enviado $hoy ${hoy == 1 ? 'candidatura' : 'candidaturas'} por ti.';
+        ? 'Hoy tienes hasta $_maxPorDia candidaturas disponibles (máximo 20 ofertas por día).'
+        : 'Hoy llevas $hoy ${hoy == 1 ? 'enviada' : 'enviadas'} de $_maxPorDia · Te ${restantes == 1 ? 'queda 1 disponible' : 'quedan $restantes disponibles'} hoy.';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -729,8 +762,10 @@ class _AutopilotPageState extends State<AutopilotPage> {
         onChangeEnd: (_) => _guardar(),
       ),
       _AjusteDeslizable(
-        etiqueta: 'Máximo al día',
-        valor: '$_maxPorDia',
+        etiqueta: 'Límite total diario (máx. 20 ofertas)',
+        valor: '$_maxPorDia / día',
+        subtitulo:
+            'Tope absoluto de 20 ofertas por día en total (incluye enviadas y propuestas de hoy; no se suman 20 nuevas en cada ejecución).',
         slider: _maxPorDia.toDouble(),
         min: 1,
         max: 20,
@@ -745,11 +780,14 @@ class _AutopilotPageState extends State<AutopilotPage> {
     final usadas = _cupoHoyMostrado;
     final restantes = (_maxPorDia - _cupoHoy).clamp(0, _maxPorDia);
     final pendientes = _propuestas.length;
+    final enviadasHoy = _enviadasHoy;
     final textoHoy = restantes == 0
-        ? 'Has completado el límite de $_maxPorDia ${_maxPorDia == 1 ? 'candidatura' : 'candidaturas'} de hoy. Sube «Máximo al día» si quieres buscar más hoy, o espera a mañana.'
-        : pendientes > 0
-        ? 'Tienes $pendientes ${pendientes == 1 ? 'propuesta pendiente' : 'propuestas pendientes'} arriba. Revísalas para liberar hueco o seguir buscando hoy.'
-        : 'La búsqueda automática se hace una vez al día. Te ${restantes == 1 ? 'queda 1 disponible' : 'quedan $restantes disponibles'} hoy si quieres ejecutarlo ahora con el botón de abajo.';
+        ? (_maxPorDia >= 20
+              ? 'Has alcanzado el tope máximo de 20 ofertas de empleo por hoy. El sistema solo permite hasta 20 candidaturas diarias en total; mañana a las 00:00 volverás a tener cupo disponible.'
+              : 'Has completado tu límite configurado de $_maxPorDia ${_maxPorDia == 1 ? 'candidatura' : 'candidaturas'} de hoy. El tope máximo del sistema es de 20 ofertas totales al día (puedes subir el deslizador hasta 20 para disponer de ${20 - _cupoHoy} más hoy).')
+        : usadas == 0
+        ? 'Puedes postular como máximo a $_maxPorDia ${_maxPorDia == 1 ? 'oferta' : 'ofertas'} en total durante todo el día de hoy (el límite máximo del sistema es de 20 al día).'
+        : 'De tu tope de $_maxPorDia ofertas para hoy ya has utilizado $usadas (${enviadasHoy > 0 ? '$enviadasHoy ${enviadasHoy == 1 ? 'enviada' : 'enviadas'}' : ''}${enviadasHoy > 0 && pendientes > 0 ? ' y ' : ''}${pendientes > 0 ? '$pendientes en revisión' : ''}). Solo puedes generar hasta $restantes ${restantes == 1 ? 'oferta más' : 'ofertas más'} en lo que queda de día.';
 
     return Panel(
       child: Column(
@@ -757,14 +795,19 @@ class _AutopilotPageState extends State<AutopilotPage> {
         children: [
           Row(
             children: [
-              Expanded(child: Text('Hoy', style: AppText.h2)),
+              Expanded(
+                child: Text('Cupo de hoy (máx. 20/día)', style: AppText.h2),
+              ),
               Semantics(
                 label: '$usadas de $_maxPorDia del cupo de hoy',
                 excludeSemantics: true,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('$usadas / $_maxPorDia', style: AppText.numInline),
+                    Text(
+                      '$usadas / $_maxPorDia usadas',
+                      style: AppText.numInline,
+                    ),
                     const SizedBox(width: AppSpacing.group),
                     Steps(filled: _pasosCupo, animar: true),
                   ],
@@ -772,7 +815,27 @@ class _AutopilotPageState extends State<AutopilotPage> {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.micro),
+          const SizedBox(height: AppSpacing.group),
+          Wrap(
+            spacing: AppSpacing.group,
+            runSpacing: AppSpacing.group,
+            children: [
+              StatusTag(
+                label:
+                    'Restantes hoy: $restantes de $_maxPorDia',
+                variant: restantes == 0
+                    ? StatusVariant.warning
+                    : StatusVariant.success,
+              ),
+              StatusTag(label: 'Enviadas hoy: $enviadasHoy'),
+              if (pendientes > 0)
+                StatusTag(
+                  label: 'Por revisar: $pendientes',
+                  variant: StatusVariant.warning,
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.group),
           Text(textoHoy, style: AppText.mutedBody),
         ],
       ),
@@ -1004,10 +1067,12 @@ class _AjusteDeslizable extends StatelessWidget {
     required this.divisiones,
     required this.onChanged,
     required this.onChangeEnd,
+    this.subtitulo,
   });
 
   final String etiqueta;
   final String valor;
+  final String? subtitulo;
   final double slider;
   final double min;
   final double max;
@@ -1027,6 +1092,10 @@ class _AjusteDeslizable extends StatelessWidget {
             Text(valor, style: AppText.numInline),
           ],
         ),
+        if (subtitulo != null) ...[
+          const SizedBox(height: AppSpacing.micro),
+          Text(subtitulo!, style: AppText.meta),
+        ],
         Slider(
           value: slider,
           min: min,

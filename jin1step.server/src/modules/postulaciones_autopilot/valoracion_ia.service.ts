@@ -11,7 +11,7 @@ const MAX_CV_CHARS = 12_000
 const MAX_DESCRIPCION_CHARS = 1_500
 const TAMANO_LOTE = 20
 //Tope de ofertas que se mandan a la IA por ejecución, para acotar coste y tiempo.
-export const MAX_OFERTAS_IA = 60
+export const MAX_OFERTAS_IA = 20
 
 //Todo el texto del CV y de las ofertas es contenido de terceros: puede traer
 //frases tipo "ignora las instrucciones anteriores". Se declara como datos.

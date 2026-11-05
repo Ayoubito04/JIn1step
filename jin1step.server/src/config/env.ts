@@ -22,6 +22,11 @@ export const env={
   jwtRefreshSecret: required('JWT_REFRESH_SECRET'),
 
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
+  linkedinClientId: process.env.LINKEDIN_CLIENT_ID ?? '',
+  linkedinClientSecret: process.env.LINKEDIN_CLIENT_SECRET ?? '',
+  linkedinRedirectUri:
+    process.env.LINKEDIN_REDIRECT_URI ??
+    'http://localhost:3000/api/auth/linkedin/callback',
 
   //Las claves de Stripe NO usan required(): el servidor tiene que poder
   //arrancar sin ellas para desarrollar el resto de modulos. Quien las
@@ -41,7 +46,7 @@ export const env={
   //IA_PROVIDER fuerza 'gemini' u 'openai'; si no se pone, se usa el que tenga clave.
   iaProvider: process.env.IA_PROVIDER ?? '',
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',
-  geminiModel: process.env.GEMINI_MODEL ?? 'gemini-3.5-flash-lite',
+  geminiModel: process.env.GEMINI_MODEL ?? 'gemini-3.1-flash-lite',
   openaiApiKey: process.env.OPENAI_API_KEY ?? '',
   openaiModel: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
 };

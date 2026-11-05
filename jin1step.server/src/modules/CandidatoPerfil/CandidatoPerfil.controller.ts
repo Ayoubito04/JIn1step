@@ -54,16 +54,69 @@ export async function actualizarMiPerfil(
     }
 }
 
-//Lo consulta el reclutador al revisar una candidatura.
+//Lo consulta el reclutador al revisar una candidatura o bien otro candidato en la red.
 export async function perfilDeCandidato(
     req: Request,
     res: Response,
     next: NextFunction,
 ): Promise<void> {
     try {
-        usuarioAutenticado(req)
+        const usuario = usuarioAutenticado(req)
         res.status(200).json(
             await perfilService.obtenerPerfilDeCandidato(
+                leerParam(req, 'candidatoId'),
+                usuario.id,
+            ),
+        )
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function redCandidatos(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+        const q = typeof req.query.q === 'string' ? req.query.q : undefined
+        res.status(200).json(
+            await perfilService.obtenerRedCandidatos(usuario.id, q),
+        )
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function seguirCandidato(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+        res.status(200).json(
+            await perfilService.seguirCandidato(
+                usuario.id,
+                leerParam(req, 'candidatoId'),
+            ),
+        )
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function dejarDeSeguirCandidato(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+        res.status(200).json(
+            await perfilService.dejarDeSeguirCandidato(
+                usuario.id,
                 leerParam(req, 'candidatoId'),
             ),
         )
@@ -112,6 +165,40 @@ export async function borrarBanner(
     try {
         const usuario = usuarioAutenticado(req)
         res.status(200).json(await perfilService.borrarBanner(usuario.id))
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function subirFotoPerfil(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+        if (!req.file) {
+            throw new HttpError(
+                400,
+                'Falta la imagen de la foto de perfil (campo "archivo")',
+            )
+        }
+        res.status(200).json(
+            await perfilService.guardarFotoPerfil(usuario.id, req.file),
+        )
+    } catch (err) {
+        next(err)
+    }
+}
+
+export async function borrarFotoPerfil(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const usuario = usuarioAutenticado(req)
+        res.status(200).json(await perfilService.borrarFotoPerfil(usuario.id))
     } catch (err) {
         next(err)
     }

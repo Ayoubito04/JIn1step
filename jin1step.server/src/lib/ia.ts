@@ -34,9 +34,18 @@ type OpcionesJson = {
     maxTokens?: number
 }
 
-async function llamarGemini(o: OpcionesJson): Promise<string | null | undefined> {
+const MODELOS_FALLBACK_GEMINI = [
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+]
+
+async function llamarGeminiConModelo(
+    modelo: string,
+    o: OpcionesJson,
+): Promise<string | null | undefined> {
     const respuesta = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${env.geminiModel}:generateContent`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
         {
             method: 'POST',
             headers: {
@@ -54,17 +63,32 @@ async function llamarGemini(o: OpcionesJson): Promise<string | null | undefined>
                     responseJsonSchema: o.esquema,
                 },
             }),
-            signal: AbortSignal.timeout(o.timeoutMs ?? 60_000),
+            signal: AbortSignal.timeout(o.timeoutMs ?? 20_000),
         },
     )
     //Solo el código HTTP: el cuerpo del error podría incluir fragmentos del
     //prompt (datos del CV) y no queremos que acaben en los logs.
-    if (!respuesta.ok) throw new Error(`Gemini respondió ${respuesta.status}`)
+    if (!respuesta.ok) throw new Error(`Gemini (${modelo}) respondió ${respuesta.status}`)
 
     const datos = (await respuesta.json()) as {
         candidates?: { content?: { parts?: { text?: string }[] } }[]
     }
     return datos.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('')
+}
+
+async function llamarGemini(o: OpcionesJson): Promise<string | null | undefined> {
+    const candidatos = Array.from(
+        new Set([env.geminiModel, ...MODELOS_FALLBACK_GEMINI]),
+    )
+    let ultimoError: unknown
+    for (const modelo of candidatos) {
+        try {
+            return await llamarGeminiConModelo(modelo, o)
+        } catch (error) {
+            ultimoError = error
+        }
+    }
+    throw ultimoError instanceof Error ? ultimoError : new Error('Gemini no disponible')
 }
 
 async function llamarOpenAi(o: OpcionesJson): Promise<string | null | undefined> {

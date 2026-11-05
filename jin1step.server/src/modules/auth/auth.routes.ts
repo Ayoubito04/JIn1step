@@ -2,8 +2,14 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import * as authController from './auth.controller'
+import { requireAuth } from '../../middlewares/auth.middleware'
 import { validateBody } from '../../middlewares/validate.middleware'
-import { googleAuthSchema, loginSchema, registerSchema } from './auth.schema'
+import {
+    googleAuthSchema,
+    linkedinAuthSchema,
+    loginSchema,
+    registerSchema,
+} from './auth.schema'
 
 //El login es el objetivo típico de fuerza bruta, así que va limitado por IP
 const authLimiter = rateLimit({
@@ -28,4 +34,16 @@ authRouter.post(
     authLimiter,
     validateBody(googleAuthSchema),
     authController.loginConGoogle,
+)
+authRouter.post(
+    '/login/linkedin',
+    authLimiter,
+    validateBody(linkedinAuthSchema),
+    authController.loginConLinkedin,
+)
+authRouter.post(
+    '/linkedin/sincronizar',
+    requireAuth,
+    validateBody(linkedinAuthSchema),
+    authController.sincronizarLinkedin,
 )

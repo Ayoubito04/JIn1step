@@ -1,4 +1,5 @@
 import '../core/api_client.dart';
+import 'candidato.service.dart';
 
 /// Rol con el que se registra un usuario.
 ///
@@ -91,6 +92,62 @@ class AuthService {
     }
   }
   //Antes del registroi,vamos a definir el rol del usuario
+
+  /// Entra (o crea la cuenta) con LinkedIn e importa foto y CV.
+  ///
+  /// [datos] puede llevar `code`/`accessToken` de OAuth real o, en desarrollo,
+  /// los datos del perfil a conectar (email, nombre, titular...). Devuelve la
+  /// respuesta completa: `usuario`, `fotoPerfil` y `cvImportado`.
+  Future<Map<String, dynamic>> loginConLinkedin(
+    Map<String, dynamic> datos, {
+    Rol rol = Rol.candidato,
+  }) async {
+    try {
+      final respuesta = await ApiClient.dio.post(
+        '/auth/login/linkedin',
+        data: {...datos, 'rol': rol.valorApi},
+      );
+      final cuerpo = respuesta.data as Map<String, dynamic>;
+      await ApiClient.storage.write(
+        key: ApiClient.claveAccessToken,
+        value: cuerpo['accessToken'] as String,
+      );
+      await ApiClient.storage.write(
+        key: ApiClient.claveRefreshToken,
+        value: cuerpo['refreshToken'] as String,
+      );
+      _actualizarFoto(cuerpo['fotoPerfil']);
+      return cuerpo;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  /// Con la sesión ya iniciada, importa la foto y el CV de LinkedIn.
+  /// Devuelve `{fotoPerfil, cvImportado}`.
+  Future<Map<String, dynamic>> sincronizarConLinkedin(
+    Map<String, dynamic> datos,
+  ) async {
+    try {
+      final respuesta = await ApiClient.dio.post(
+        '/auth/linkedin/sincronizar',
+        data: datos,
+      );
+      final cuerpo = respuesta.data as Map<String, dynamic>;
+      _actualizarFoto(cuerpo['fotoPerfil']);
+      return cuerpo;
+    } catch (error) {
+      throw ApiClient.traducirError(error);
+    }
+  }
+
+  /// La cabecera del Home escucha este notifier: así la foto nueva aparece
+  /// sin recargar.
+  void _actualizarFoto(Object? foto) {
+    if (foto is String && foto.isNotEmpty) {
+      CandidatoService.fotoPerfilActual.value = foto;
+    }
+  }
 
   /// Cierra la sesión borrando los tokens del dispositivo.
   Future<void> logout() async {

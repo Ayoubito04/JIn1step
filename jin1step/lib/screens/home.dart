@@ -32,6 +32,7 @@ import 'mis_postulaciones.dart';
 import 'oferta_detalle.dart';
 import 'ofertas.dart';
 import 'perfil.dart';
+import 'red_candidatos.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key, this.ofertasService});
@@ -687,6 +688,15 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
   void initState() {
     super.initState();
     _cargar();
+    unawaited(_cargarFotoPerfil());
+  }
+
+  Future<void> _cargarFotoPerfil() async {
+    try {
+      await _candidato.obtenerMiPerfil();
+    } catch (_) {
+      // Si falla la carga del perfil opcional, el avatar muestra la inicial.
+    }
   }
 
   Future<void> _cargar() async {
@@ -870,10 +880,14 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
                   child: SizedBox.square(
                     dimension: AppSpacing.tap,
                     child: Center(
-                      child: Avatar(
-                        initial: inicialUsuario,
-                        seed: correoUsuario,
-                        size: 40,
+                      child: ValueListenableBuilder<String?>(
+                        valueListenable: CandidatoService.fotoPerfilActual,
+                        builder: (context, fotoUrl, _) => Avatar(
+                          initial: inicialUsuario,
+                          seed: correoUsuario,
+                          size: 40,
+                          imageUrl: fotoUrl,
+                        ),
                       ),
                     ),
                   ),
@@ -949,6 +963,30 @@ class _InicioCandidatoTabState extends State<_InicioCandidatoTab> {
                 _filaMatch(match.oferta, match.score),
             ],
           ),
+        const SizedBox(height: AppSpacing.gap),
+        SectionTitle(
+          'Red profesional',
+          trailing: LinkAction(
+            label: 'Explorar candidatos',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RedCandidatosPage()),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.group),
+        PanelList(
+          children: [
+            ListRow(
+              title: 'Comunidad de candidatos',
+              lines: const [
+                'Sigue a otros profesionales en un clic y consulta su perfil público.',
+              ],
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const RedCandidatosPage()),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }

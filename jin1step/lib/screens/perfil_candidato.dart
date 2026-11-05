@@ -2,16 +2,20 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
+import '../services/candidato.service.dart';
 import '../services/chat.service.dart';
 import '../services/postulaciones.service.dart';
 import '../widgets/design_system.dart';
 import 'mensajes.dart';
 import 'perfil.dart';
 
-/// Vista del perfil completo de un candidato para el reclutador:
-/// cabecera estilo LinkedIn con su foto de portada (banner) y avatar,
-/// ubicación, disponibilidad, expectativa salarial, resumen profesional,
-/// habilidades con su nivel y acciones sobre su candidatura.
+/// Vista del perfil completo de un candidato:
+/// - Para reclutadores: cabecera estilo LinkedIn con su foto de portada (banner),
+///   ubicación, disponibilidad, expectativa salarial, resumen profesional,
+///   habilidades y acciones sobre su candidatura.
+/// - Para otros candidatos (red social): cabecera con contadores de seguidores
+///   y siguiendo, botón en 1 clic de Seguir / Siguiendo, ubicación,
+///   disponibilidad, resumen profesional y habilidades.
 class PerfilCandidatoPage extends StatefulWidget {
   const PerfilCandidatoPage({
     super.key,
@@ -20,7 +24,9 @@ class PerfilCandidatoPage extends StatefulWidget {
     this.postulacion,
     this.oferta,
     this.reclutadorId,
+    this.esVistaCandidato = false,
     this.service,
+    this.candidatoService,
   });
 
   final String candidatoId;
@@ -28,7 +34,9 @@ class PerfilCandidatoPage extends StatefulWidget {
   final Map<String, dynamic>? postulacion;
   final Map<String, dynamic>? oferta;
   final String? reclutadorId;
+  final bool esVistaCandidato;
   final PostulacionesService? service;
+  final CandidatoService? candidatoService;
 
   @override
   State<PerfilCandidatoPage> createState() => _PerfilCandidatoPageState();
@@ -37,6 +45,8 @@ class PerfilCandidatoPage extends StatefulWidget {
 class _PerfilCandidatoPageState extends State<PerfilCandidatoPage> {
   late final PostulacionesService _service =
       widget.service ?? PostulacionesService();
+  late final CandidatoService _candidatoService =
+      widget.candidatoService ?? CandidatoService();
   final _chat = ChatService();
   late Future<Map<String, dynamic>> _futuroPerfil = _service
       .obtenerPerfilCandidato(widget.candidatoId);
@@ -44,7 +54,39 @@ class _PerfilCandidatoPageState extends State<PerfilCandidatoPage> {
   bool _abriendoChat = false;
   bool _descargandoCv = false;
   bool _actualizandoEstado = false;
+  bool _cambiandoSeguimiento = false;
+  bool? _loSigoOverride;
+  int? _seguidoresOverride;
   String? _errorAccion;
+
+  Future<void> _alternarSeguimiento(
+    bool loSigoActual,
+    int seguidoresActuales,
+  ) async {
+    if (_cambiandoSeguimiento) return;
+    setState(() {
+      _cambiandoSeguimiento = true;
+      _errorAccion = null;
+    });
+    try {
+      final resp = loSigoActual
+          ? await _candidatoService.dejarDeSeguirCandidato(widget.candidatoId)
+          : await _candidatoService.seguirCandidato(widget.candidatoId);
+      if (!mounted) return;
+      setState(() {
+        _loSigoOverride = resp['loSigo'] as bool? ?? !loSigoActual;
+        _seguidoresOverride =
+            (resp['seguidoresCount'] as num?)?.toInt() ??
+            (loSigoActual
+                ? (seguidoresActuales - 1).clamp(0, 999999)
+                : seguidoresActuales + 1);
+      });
+    } catch (error) {
+      if (mounted) setState(() => _errorAccion = error.toString());
+    } finally {
+      if (mounted) setState(() => _cambiandoSeguimiento = false);
+    }
+  }
 
   void _recargar() {
     setState(() {
@@ -194,7 +236,33 @@ class _PerfilCandidatoPageState extends State<PerfilCandidatoPage> {
             final nombreVisible = nombre.isEmpty ? 'Candidato/a' : nombre;
             final correo = (usuario['email'] as String?)?.trim() ?? '';
             final inicial = nombreVisible[0].toUpperCase();
-            final banner = datos?['banner'] as String?;
+            final banner =
+                (datos?['banner'] as String?) ??
+                (widget.candidatoInicial?['banner'] as String?);
+            final fotoPerfil =
+                (datos?['fotoPerfil'] as String?) ??
+                (widget.candidatoInicial?['fotoPerfil'] as String?);
+            final seguidoresCount =
+                _seguidoresOverride ??
+                (datos?['seguidoresCount'] as num?)?.toInt() ??
+                (widget.candidatoInicial?['seguidoresCount'] as num?)?.toInt() ??
+                0;
+            final siguiendoCount =
+                (datos?['siguiendoCount'] as num?)?.toInt() ??
+                (widget.candidatoInicial?['siguiendoCount'] as num?)?.toInt() ??
+                0;
+            final loSigo =
+                _loSigoOverride ??
+                (datos?['loSigo'] as bool?) ??
+                (widget.candidatoInicial?['loSigo'] as bool?) ??
+                false;
+            final meSigue =
+                (datos?['meSigue'] as bool?) ??
+                (widget.candidatoInicial?['meSigue'] as bool?) ??
+                false;
+            final mostrarBotonSeguir =
+                widget.esVistaCandidato ||
+                (widget.reclutadorId == null || widget.reclutadorId!.isEmpty);
 
             return ListView(
               padding: const EdgeInsets.all(AppSpacing.screen),
@@ -210,10 +278,19 @@ class _PerfilCandidatoPageState extends State<PerfilCandidatoPage> {
                 const SizedBox(height: AppSpacing.gap),
                 _CabeceraCandidatoReclutador(
                   nombreCompleto: nombreVisible,
-                  correo: correo,
+                  correo: widget.esVistaCandidato ? '' : correo,
                   inicial: inicial,
                   banner: banner,
+                  fotoPerfil: fotoPerfil,
                   paraEntrevista: _estadoPostulacion == 'ENTREVISTA',
+                  seguidoresCount: seguidoresCount,
+                  siguiendoCount: siguiendoCount,
+                  meSigue: meSigue,
+                  loSigo: loSigo,
+                  cambiandoSeguimiento: _cambiandoSeguimiento,
+                  onAlternarSeguimiento: mostrarBotonSeguir
+                      ? () => _alternarSeguimiento(loSigo, seguidoresCount)
+                      : null,
                 ),
                 const SizedBox(height: AppSpacing.gap),
                 if (snapshot.connectionState == ConnectionState.waiting)
@@ -347,16 +424,17 @@ class _PerfilCandidatoPageState extends State<PerfilCandidatoPage> {
                     : disponibilidad,
               ],
             ),
-            ListRow(
-              title: 'Expectativa salarial',
-              lines: const ['Brutos al año'],
-              trailing: Text(
-                expectativa != null
-                    ? formatearEurosAnuales(expectativa)
-                    : 'Sin indicar',
-                style: expectativa != null ? AppText.numInline : AppText.meta,
+            if (!widget.esVistaCandidato)
+              ListRow(
+                title: 'Expectativa salarial',
+                lines: const ['Brutos al año'],
+                trailing: Text(
+                  expectativa != null
+                      ? formatearEurosAnuales(expectativa)
+                      : 'Sin indicar',
+                  style: expectativa != null ? AppText.numInline : AppText.meta,
+                ),
               ),
-            ),
           ],
         ),
         if (resumenIa != null && resumenIa.isNotEmpty) ...[
@@ -493,13 +571,27 @@ class _CabeceraCandidatoReclutador extends StatelessWidget {
     required this.inicial,
     required this.banner,
     required this.paraEntrevista,
+    required this.seguidoresCount,
+    required this.siguiendoCount,
+    this.fotoPerfil,
+    this.meSigue = false,
+    this.loSigo = false,
+    this.cambiandoSeguimiento = false,
+    this.onAlternarSeguimiento,
   });
 
   final String nombreCompleto;
   final String correo;
   final String inicial;
   final String? banner;
+  final String? fotoPerfil;
   final bool paraEntrevista;
+  final int seguidoresCount;
+  final int siguiendoCount;
+  final bool meSigue;
+  final bool loSigo;
+  final bool cambiandoSeguimiento;
+  final VoidCallback? onAlternarSeguimiento;
 
   @override
   Widget build(BuildContext context) {
@@ -557,6 +649,7 @@ class _CabeceraCandidatoReclutador extends StatelessWidget {
                     initial: inicial,
                     seed: correo.isEmpty ? nombreCompleto : correo,
                     size: 56,
+                    imageUrl: fotoPerfil,
                   ),
                 ),
               ),
@@ -573,16 +666,42 @@ class _CabeceraCandidatoReclutador extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ScreenHeader(
-                  title: nombreCompleto,
-                  subtitle: correo.isEmpty ? null : correo,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: ScreenHeader(
+                        title: nombreCompleto,
+                        subtitle: correo.isEmpty ? null : correo,
+                      ),
+                    ),
+                    if (onAlternarSeguimiento != null) ...[
+                      const SizedBox(width: AppSpacing.group),
+                      _BotonSeguirCompacto(
+                        loSigo: loSigo,
+                        cargando: cambiandoSeguimiento,
+                        onTap: onAlternarSeguimiento!,
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.group),
                 Wrap(
                   spacing: AppSpacing.group,
                   runSpacing: AppSpacing.group,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     const StatusTag(label: 'Candidato/a'),
+                    StatusTag(
+                      label:
+                          '$seguidoresCount ${seguidoresCount == 1 ? 'seguidor' : 'seguidores'}',
+                    ),
+                    StatusTag(label: '$siguiendoCount siguiendo'),
+                    if (meSigue)
+                      const StatusTag(
+                        label: 'Te sigue',
+                        variant: StatusVariant.success,
+                      ),
                     if (paraEntrevista)
                       const StatusTag(
                         label: 'Seleccionado para entrevista',
@@ -607,5 +726,63 @@ class _CabeceraCandidatoReclutador extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _BotonSeguirCompacto extends StatelessWidget {
+  const _BotonSeguirCompacto({
+    required this.loSigo,
+    required this.cargando,
+    required this.onTap,
+  });
+
+  final bool loSigo;
+  final bool cargando;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: loSigo ? AppColors.surface : AppColors.ink,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.control),
+        side: BorderSide(color: loSigo ? AppColors.control : AppColors.ink),
+      ),
+      child: InkWell(
+        onTap: cargando ? null : onTap,
+        borderRadius: BorderRadius.circular(AppRadii.control),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (cargando)
+                SizedBox.square(
+                  dimension: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      loSigo ? AppColors.text : AppColors.white,
+                    ),
+                  ),
+                )
+              else
+                Icon(
+                  loSigo ? Icons.check : Icons.person_add_alt_1_outlined,
+                  size: 16,
+                  color: loSigo ? AppColors.text : AppColors.white,
+                ),
+              const SizedBox(width: 6),
+              Text(
+                loSigo ? 'Siguiendo' : 'Seguir',
+                style: AppText.button.copyWith(
+                  color: loSigo ? AppColors.text : AppColors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 

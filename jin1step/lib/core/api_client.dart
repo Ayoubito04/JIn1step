@@ -33,8 +33,11 @@ class ApiClient {
     BaseOptions(
       baseUrl: ApiConfig.baseUrl,
       // Sin límite, si el backend está apagado el botón se quedaría
-      // cargando indefinidamente.
-      connectTimeout: const Duration(seconds: 8),
+      // cargando indefinidamente. En Web, IndexedStack lanza varias
+      // peticiones a la vez y el navegador las encola en su pool de 6
+      // conexiones, así que damos margen suficiente para evitar falsos
+      // timeouts de conexión.
+      connectTimeout: const Duration(seconds: 25),
       receiveTimeout: const Duration(seconds: 15),
     ),
   )..interceptors.add(

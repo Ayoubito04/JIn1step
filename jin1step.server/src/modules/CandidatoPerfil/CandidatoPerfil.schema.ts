@@ -43,6 +43,13 @@ export const actualizarPerfilSchema = z
             .min(1, 'El banner no puede estar vacío')
             .max(10_000_000, 'La imagen del banner supera el tamaño máximo permitido')
             .nullish(),
+
+        fotoPerfil: z
+            .string()
+            .trim()
+            .min(1, 'La foto de perfil no puede estar vacía')
+            .max(10_000_000, 'La foto de perfil supera el tamaño máximo permitido')
+            .nullish(),
     })
     .strict()
     //Sin esto, un PATCH con {} pasaría la validación y haría un upsert que no

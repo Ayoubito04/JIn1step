@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_theme.dart';
@@ -1305,28 +1308,75 @@ class LinkAction extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class Avatar extends StatelessWidget {
-  const Avatar({super.key, required this.initial, this.seed, this.size = 40});
+  const Avatar({
+    super.key,
+    required this.initial,
+    this.seed,
+    this.size = 40,
+    this.imageUrl,
+  });
 
   final String initial;
   final String? seed;
   final double size;
+  final String? imageUrl;
+
+  static Uint8List? _decodificarDataUri(String? uri) {
+    if (uri == null) return null;
+    final limpio = uri.trim();
+    if (!limpio.startsWith('data:image/')) return null;
+    final coma = limpio.indexOf(',');
+    if (coma == -1 || coma + 1 >= limpio.length) return null;
+    try {
+      return base64Decode(limpio.substring(coma + 1));
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    image: true,
-    label: 'Avatar $initial',
-    excludeSemantics: true,
-    child: Container(
-      width: size,
-      height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: tinteDePersona(seed ?? initial),
+  Widget build(BuildContext context) {
+    final bytes = _decodificarDataUri(imageUrl);
+    final urlRed =
+        bytes == null &&
+            imageUrl != null &&
+            (imageUrl!.startsWith('http://') ||
+                imageUrl!.startsWith('https://'))
+        ? imageUrl!
+        : null;
+
+    return Semantics(
+      image: true,
+      label: 'Avatar $initial',
+      excludeSemantics: true,
+      child: Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: tinteDePersona(seed ?? initial),
+        ),
+        child: bytes != null
+            ? Image.memory(
+                bytes,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+              )
+            : urlRed != null
+            ? Image.network(
+                urlRed,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Text(initial, style: AppText.h2),
+              )
+            : Text(initial, style: AppText.h2),
       ),
-      child: Text(initial, style: AppText.h2),
-    ),
-  );
+    );
+  }
 }
 
 class ChatBubble extends StatelessWidget {

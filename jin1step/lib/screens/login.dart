@@ -10,6 +10,7 @@ import '../core/google_auth_config.dart';
 import '../services/auth.service.dart';
 import '../widgets/brand_logo.dart';
 import '../widgets/design_system.dart';
+import '../widgets/linkedin_auth_sheet.dart';
 import '../widgets/google_sign_in_web_button_stub.dart'
     if (dart.library.html) '../widgets/google_sign_in_web_button.dart'
     as google_web;
@@ -251,6 +252,32 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // Mismas reglas de siempre, ahora junto a cada campo.
+  /// Entra con LinkedIn: confirma el perfil en la hoja y el backend crea o
+  /// recupera la cuenta, importando foto y CV.
+  Future<void> _iniciarSesionLinkedin() async {
+    if (_cargando) return;
+    final datos = await mostrarHojaLinkedin(
+      context,
+      titulo: 'Entrar con LinkedIn',
+      textoBoton: 'Continuar con LinkedIn',
+    );
+    if (datos == null || !mounted) return;
+
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+    try {
+      final respuesta = await _auth.loginConLinkedin(datos.aMapa());
+      if (mounted) _entrarHome(respuesta['usuario'] as Map<String, dynamic>);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.mensaje);
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  // Mismas reglas de siempre, ahora junto a cada campo.
   String? _validarEmail(String? valor) {
     final email = (valor ?? '').trim();
     if (email.isEmpty) return 'Introduce tu correo';
@@ -384,6 +411,12 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: AppSpacing.group),
             _botonGoogle(),
+            const SizedBox(height: AppSpacing.group),
+            SecondaryButton(
+              label: 'Entrar con LinkedIn',
+              leading: const LinkedinLogoMark(),
+              onPressed: _cargando ? null : _iniciarSesionLinkedin,
+            ),
           ],
         ),
       ),

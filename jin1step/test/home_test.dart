@@ -10,6 +10,7 @@ import 'package:jin1step/core/api_client.dart';
 import 'package:jin1step/core/app_theme.dart';
 import 'package:jin1step/screens/home.dart';
 import 'package:jin1step/screens/oferta_detalle.dart';
+import 'package:jin1step/screens/ofertas.dart';
 import 'package:jin1step/widgets/design_system.dart';
 
 final candidato = {
@@ -412,4 +413,15 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  test('Ofertas.extraerSalarioOferta extrae el salario mínimo correctamente', () {
+    expect(Ofertas.extraerSalarioOferta('24.000 - 28.000 € brutos/año'), 24000);
+    expect(Ofertas.extraerSalarioOferta('30.000 - 38.000 € brutos/año'), 30000);
+    expect(Ofertas.extraerSalarioOferta('35.000 - 43.000 € brutos/año'), 35000);
+    expect(Ofertas.extraerSalarioOferta('45.000 - 55.000 € brutos/año'), 45000);
+    expect(Ofertas.extraerSalarioOferta('56.000 - 68.000 € brutos/año'), 56000);
+    expect(Ofertas.extraerSalarioOferta('45k'), 45000);
+    expect(Ofertas.extraerSalarioOferta('32000'), 32000);
+    expect(Ofertas.extraerSalarioOferta(null), isNull);
+  });
 }
